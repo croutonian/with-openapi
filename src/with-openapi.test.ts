@@ -146,6 +146,41 @@ describe('matching', () => {
     expect((await handler(get('/api/v1/users/me'))).status).toBe(200)
     expect((await handler(get('/users/me'))).status).toBe(404)
   })
+
+  // A basePath that nothing ever starts with turns every route into a 404,
+  // and the stock wording sends the reader to the document to look for a path
+  // that is already in it. These two say which mistake it was.
+  it('says a pathname missed basePath rather than blaming the document', async () => {
+    const res = await echo({ basePath: '/api/v1' })(get('/users/me'))
+    expect(res.status).toBe(404)
+    expect(await res.json()).toMatchObject({
+      error: 'route_not_found',
+      message: 'the pathname "/users/me" is outside basePath "/api/v1"',
+    })
+  })
+
+  it('names the path it matched against when the mount was right', async () => {
+    const res = await echo({ basePath: '/api/v1' })(get('/api/v1/nope'))
+    expect(res.status).toBe(404)
+    expect(await res.json()).toMatchObject({
+      error: 'route_not_found',
+      message: 'no operation in the API description matches "/nope"',
+    })
+  })
+
+  it('hands the same explanation to a reject callback', async () => {
+    const seen: string[] = []
+    await echo({
+      basePath: '/api/v1',
+      reject: (rejection) => {
+        seen.push(rejection.message ?? '(none)')
+        return undefined
+      },
+    })(get('/users/me'))
+    expect(seen).toEqual([
+      'the pathname "/users/me" is outside basePath "/api/v1"',
+    ])
+  })
 })
 
 describe('parameters', () => {

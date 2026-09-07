@@ -129,6 +129,16 @@ callback before that response is built:
 | `unsupported_media_type` | 415    | The body's content type is not in the operation's `content`.            |
 | `validation_failed`      | 400    | A parameter or body failed its schema.                                  |
 
+`route_not_found` says which of its two causes it was, because they are the
+same status and very different mistakes — a `basePath` nothing starts with
+turns every route into a 404, and blaming the document sends you looking for a
+path that is already in it:
+
+```
+no operation in the API description matches "/nope"
+the pathname "/users/me" is outside basePath "/api/v1"
+```
+
 The default body:
 
 ```json

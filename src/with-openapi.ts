@@ -146,7 +146,7 @@ function defaultRejectionResponse(rejection: OpenApiRejection): Response {
   return Response.json(
     {
       error: rejection.kind,
-      message: REJECTION_MESSAGES[rejection.kind],
+      message: rejection.message ?? REJECTION_MESSAGES[rejection.kind],
       ...(rejection.accepts === undefined
         ? {}
         : { accepts: rejection.accepts }),
@@ -406,11 +406,20 @@ export const withOpenApi: Middleware<
             route: undefined,
           }
         }
+        // Two very different mistakes share this status, and the stock
+        // wording points at the document for both. A pathname that never
+        // reached `basePath` is almost always the mount being wrong rather
+        // than the document being incomplete, and saying which is the
+        // difference between reading a response body and bisecting a deploy.
         return respond({
           kind: 'route_not_found',
           status: 404,
           method: req.method,
           pathname: url.pathname,
+          message:
+            pathname === undefined
+              ? `the pathname ${JSON.stringify(url.pathname)} is outside basePath ${JSON.stringify(basePath)}`
+              : `no operation in the API description matches ${JSON.stringify(pathname)}`,
           violations: [],
         })
       }
