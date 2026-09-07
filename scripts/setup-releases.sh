@@ -522,7 +522,16 @@ if [[ "$NPM_READY" == "yes" ]]; then
   step "Repository: ${REPO##*/}"
   step "Workflow filename: release.yml"
   note "  Filename only, not a path. Leave 'Environment name' empty."
+  step "Allowed actions: tick the one that also allows 'npm publish'."
+  note "  Configurations made after 3 Sep 2026 default to staging only, and"
+  note "  release.yml runs 'npm publish' — stage-only would leave every release"
+  note "  waiting in a staging area instead of going live."
   pause "Press Enter once the trusted publisher is saved."
+
+  printf '\n'
+  note "  Same thing from the CLI, if you would rather not use the form:"
+  note "    npm trust github $NPM_PKG --file release.yml \\"
+  note "      --repo $REPO --allow-publish"
 
   if have_secret NPM_TOKEN; then
     printf '\n'
