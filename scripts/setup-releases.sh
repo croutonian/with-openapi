@@ -445,12 +445,16 @@ if ! npm_pkg_exists && have_secret NPM_TOKEN; then
   say "Trusted publishing is configured against a package that already exists,"
   say "and $NPM_PKG does not yet — so something has to make the first one."
   printf '\n'
-  say "NPM_TOKEN is already set, so CI can do it: merge the release PR and the"
-  say "workflow publishes with that token. Nothing more is needed here."
+  say "NPM_TOKEN is set, so CI will try — but a token cannot answer a one-time"
+  say "password, and npm asks for one on every write unless the account's 2FA"
+  say "setting is 'Authorization only'. If yours is not, that publish fails with"
+  say "EOTP and only a human can get the first version out."
   printf '\n'
-  confirm "Publish from this machine instead?" || PUBLISH_LOCALLY=no
+  note "  Publishing from here always works and needs no account changes."
+  printf '\n'
+  confirm "Publish from this machine? (recommended)" || PUBLISH_LOCALLY=no
   [[ "$PUBLISH_LOCALLY" == "no" ]] \
-    && SKIPPED+=("first publish happens when you merge the release PR; re-run this wizard afterwards to switch to trusted publishing")
+    && SKIPPED+=("first publish: merge the release PR and hope the token can write, or run npm publish --access public here")
   printf '\n'
 fi
 

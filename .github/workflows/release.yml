@@ -139,9 +139,10 @@ jobs:
 
           # Trusted publishing is configured against a package that already
           # exists, so the very first publish of a new name has nothing to
-          # configure it on. Set an NPM_TOKEN secret to get 0.1.0 out, add the
-          # trusted publisher on npmjs.com, then delete the secret — with it
-          # gone this falls back to OIDC and needs no stored credential.
+          # configure it on. NPM_TOKEN covers that gap — but only for an account
+          # whose two-factor setting is "Authorization only". Where 2FA is
+          # required for writes, npm asks for a one-time password that no CI can
+          # answer, and the first publish has to come from a human's machine.
           if [ -n "${NPM_TOKEN:-}" ]; then
             echo "Publishing with NPM_TOKEN (bootstrap path)."
             echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" >> "$HOME/.npmrc"
@@ -149,12 +150,28 @@ jobs:
             echo "Publishing with OIDC trusted publishing."
           fi
 
-          npm publish --access public --provenance
+          set +e
+          OUTPUT=$(npm publish --access public --provenance 2>&1)
+          STATUS=$?
+          set -e
+          echo "$OUTPUT"
+
+          if [ "$STATUS" -ne 0 ] && echo "$OUTPUT" | grep -q 'EOTP'; then
+            echo "::error title=npm wants a one-time password::A token cannot answer an OTP prompt. Publish this version once from a machine that can, with: npm publish --access public. Then add a trusted publisher so CI never needs a credential. Run npm run setup-releases to be walked through both."
+          fi
+          exit "$STATUS"
 
       # JSR has no pre-release channel, so it only ever sees real releases.
-      # Runs after npm and does not fail the job: a JSR-side problem should
-      # never mask or roll back an npm release that already succeeded.
+      #
+      # `!cancelled()` rather than the implicit `success()`: the two registries
+      # are independent, and guarding this on the npm step succeeding made an
+      # npm problem into a JSR problem too. The first 0.2.0 release proved it —
+      # npm asked for an OTP, and JSR was skipped rather than failed, so the tag
+      # ended up pointing at nothing on either registry.
+      #
+      # `continue-on-error` keeps the reverse true as well: a JSR failure must
+      # never mask an npm publish that already succeeded.
       - name: Publish to JSR
-        if: ${{ steps.release.outputs.release_created }}
+        if: ${{ !cancelled() && steps.release.outputs.release_created }}
         continue-on-error: true
         run: npx jsr@0.14.3 publish

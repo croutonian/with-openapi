@@ -461,11 +461,14 @@ To do it by hand instead, the same steps are in the comments at the top of
 
 Trusted publishing is configured against a package that already exists, so the
 very first release of a new name has nothing to configure it on. The wizard
-resolves that by publishing `0.1.0` from your machine — your npm login, your
-2FA, no token created and none stored. CI takes over from the next release.
+resolves that by publishing from your machine — your npm login, your 2FA, no
+token created and none stored. CI takes over from the next release.
 
-`release.yml` also accepts an `NPM_TOKEN` secret as a fallback if you would
-rather bootstrap from CI, but nothing needs it.
+`release.yml` also accepts an `NPM_TOKEN` secret, but it is not a general
+answer: a token cannot answer a one-time password, and npm asks for one on
+every write unless the account's two-factor setting is _Authorization only_.
+Where 2FA covers writes, a CI publish fails with `EOTP` and the first version
+has to come from a human.
 
 Between releases, every branch push and pull request publishes an installable
 preview to [pkg.pr.new](https://pkg.pr.new):
