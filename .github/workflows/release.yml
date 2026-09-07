@@ -27,19 +27,47 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
+      # release-please has to open a pull request, and this org does not let
+      # GitHub Actions do that — the GITHUB_TOKEN path fails with "GitHub
+      # Actions is not permitted to create or approve pull requests", after
+      # having already created the branch and commit.
+      #
+      # A GitHub App is not GitHub Actions, so that policy does not cover it.
+      # It also fixes a second thing: GitHub suppresses workflow events from
+      # GITHUB_TOKEN to prevent loops, so a release PR opened with it gets no
+      # CI. One opened by an App does.
+      #
+      # Setup, once:
+      #   1. New App at https://github.com/organizations/croutonian/settings/apps/new
+      #      Repository permissions — Contents: Read and write,
+      #      Pull requests: Read and write. No webhook, no account permissions.
+      #   2. Generate a private key, then install the App on this repository.
+      #   3. Add two repository secrets:
+      #        GH_APP_ID           the numeric App ID
+      #        GH_APP_PRIVATE_KEY  the whole .pem, BEGIN/END lines included
+      - name: Check the release App is configured
+        env:
+          APP_ID: ${{ secrets.GH_APP_ID }}
+        run: |
+          if [ -z "${APP_ID:-}" ]; then
+            echo "::error title=Release App not configured::Set the GH_APP_ID and GH_APP_PRIVATE_KEY secrets. The comment above this step in .github/workflows/release.yml has the steps."
+            exit 1
+          fi
+
+      - name: Generate a GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+
       # Runs on every push to main. It opens or updates the release PR, and
       # sets `release_created` only on the push that merges one.
-      #
-      # This uses the default GITHUB_TOKEN, which means the release PR does not
-      # itself trigger CI — GitHub suppresses workflow events from that token to
-      # prevent loops. The PR only touches CHANGELOG.md and version fields, so
-      # that is a fair trade; swap in actions/create-github-app-token if you
-      # want CI on it.
       - name: Run release-please
         uses: googleapis/release-please-action@16a9c90856f42705d54a6fda1823352bdc62cf38 # v4.4.0
         id: release
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
 
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         if: ${{ steps.release.outputs.release_created }}
@@ -49,12 +77,16 @@ jobs:
       - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d # v6.0.5
         if: ${{ steps.release.outputs.release_created }}
 
+      # No `registry-url` here on purpose. It writes an .npmrc containing
+      # `_authToken=${NODE_AUTH_TOKEN}`, which resolves to an empty token when
+      # no secret is set — and an empty token is not the same as no token: it
+      # suppresses the OIDC exchange this normally relies on. Auth is set up
+      # explicitly in the publish step instead.
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         if: ${{ steps.release.outputs.release_created }}
         with:
           node-version: 22
           cache: 'pnpm'
-          registry-url: 'https://registry.npmjs.org'
 
       # OIDC trusted publishing needs npm 11.5.1 or newer; the npm bundled with
       # Node 22 is older. Installed into a user-writable prefix to avoid sudo.
@@ -81,6 +113,8 @@ jobs:
           # Assembled from the numeric outputs rather than `tag_name`, whose
           # shape depends on the release-please package configuration.
           VERSION: ${{ steps.release.outputs.major }}.${{ steps.release.outputs.minor }}.${{ steps.release.outputs.patch }}
+          # Optional, and only needed to bootstrap. See below.
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
 
@@ -101,6 +135,18 @@ jobs:
           elif [ "$STATUS" -ne 0 ] && ! grep -qiE 'E404|not found' "$STDERR"; then
             cat "$STDERR"
             exit 1
+          fi
+
+          # Trusted publishing is configured against a package that already
+          # exists, so the very first publish of a new name has nothing to
+          # configure it on. Set an NPM_TOKEN secret to get 0.1.0 out, add the
+          # trusted publisher on npmjs.com, then delete the secret — with it
+          # gone this falls back to OIDC and needs no stored credential.
+          if [ -n "${NPM_TOKEN:-}" ]; then
+            echo "Publishing with NPM_TOKEN (bootstrap path)."
+            echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" >> "$HOME/.npmrc"
+          else
+            echo "Publishing with OIDC trusted publishing."
           fi
 
           npm publish --access public --provenance

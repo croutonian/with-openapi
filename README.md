@@ -432,9 +432,40 @@ bun scripts/smoke.mjs
 
 Conventional commits on `main` keep a
 [release-please](https://github.com/googleapis/release-please) PR open. Merging
-it tags a release, which publishes to npm and JSR. Both authenticate with the
-workflow's OIDC token, so there are no publish secrets in the repository — the
-one-time setup is a trusted publisher on npm and a linked repository on JSR.
+it tags a release, which publishes to npm and JSR.
+
+### One-time setup
+
+```sh
+npm run setup-releases
+```
+
+A wizard that opens each page, says what to click, captures what you copy back,
+and writes it to the right repository secret. It reads the current state before
+each stage, so it is safe to re-run and safe to abandon halfway — and you re-run
+it after the first release to swap npm from a token to trusted publishing.
+
+What it configures, and why each is needed:
+
+|                                                                                                                      | Why                                                                                                                                                                                                                                    |
+| -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A **GitHub App** with Contents and Pull requests write, installed on the repo, as `GH_APP_ID` + `GH_APP_PRIVATE_KEY` | release-please has to open a PR, and this org does not let GitHub Actions do that. An App is not GitHub Actions, so the policy does not cover it — and unlike `GITHUB_TOKEN`, its pushes trigger workflows, so the release PR gets CI. |
+| The **pkg.pr.new App** installed on the repo                                                                         | Branch previews. Without it the preview job warns and skips rather than failing.                                                                                                                                                       |
+| An **npm trusted publisher** for `@croutonian/with-openapi`                                                          | Publishing without a stored credential.                                                                                                                                                                                                |
+| The **JSR package** linked to this repository                                                                        | Same, on the JSR side.                                                                                                                                                                                                                 |
+
+To do it by hand instead, the same steps are in the comments at the top of
+[`release.yml`](./.github/workflows/release.yml).
+
+### The first publish
+
+Trusted publishing is configured against a package that already exists, so the
+very first release of a new name has nothing to configure it on. The wizard
+resolves that by publishing `0.1.0` from your machine — your npm login, your
+2FA, no token created and none stored. CI takes over from the next release.
+
+`release.yml` also accepts an `NPM_TOKEN` secret as a fallback if you would
+rather bootstrap from CI, but nothing needs it.
 
 Between releases, every branch push and pull request publishes an installable
 preview to [pkg.pr.new](https://pkg.pr.new):

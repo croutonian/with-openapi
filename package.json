@@ -50,7 +50,8 @@
     "check-exports": "attw --pack . --profile esm-only",
     "check-jsr": "pnpm dlx jsr@0.14.3 publish --dry-run --allow-dirty",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "setup-releases": "bash scripts/setup-releases.sh"
   },
   "dependencies": {
     "@cfworker/json-schema": "^4.1.1",

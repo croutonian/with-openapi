@@ -61,6 +61,28 @@ jobs:
       # `--comment` has nothing to attach to on a plain branch push; on a pull
       # request it edits one comment in place instead of adding one per commit.
       - name: Publish preview package
+        env:
+          COMMENT: ${{ github.event_name == 'pull_request' && 'update' || 'off' }}
         run: |
-          npx pkg-pr-new@0.0.88 publish --pnpm \
-            --comment=${{ github.event_name == 'pull_request' && 'update' || 'off' }}
+          set -uo pipefail
+
+          # Captured rather than streamed, so the one failure that is a missing
+          # setup step can be told apart from a real publish failure.
+          set +e
+          OUTPUT=$(npx pkg-pr-new@0.0.88 publish --pnpm --comment="$COMMENT" 2>&1)
+          STATUS=$?
+          set -e
+          echo "$OUTPUT"
+
+          if [ "$STATUS" -eq 0 ]; then exit 0; fi
+
+          # The GitHub App has to be installed on the repository by a human, and
+          # nothing in this workflow can do it. Failing every push until someone
+          # does trains people to ignore a red check; a warning annotation says
+          # the same thing without that cost.
+          if echo "$OUTPUT" | grep -q 'is not installed on'; then
+            echo "::warning title=No preview published::Install the pkg.pr.new GitHub App on this repository to enable branch previews — https://github.com/apps/pkg-pr-new"
+            exit 0
+          fi
+
+          exit "$STATUS"
