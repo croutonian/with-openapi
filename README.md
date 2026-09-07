@@ -436,6 +436,17 @@ it tags a release, which publishes to npm and JSR.
 
 ### One-time setup
 
+```sh
+npm run setup-releases
+```
+
+A wizard that opens each page, says what to click, captures what you copy back,
+and writes it to the right repository secret. It reads the current state before
+each stage, so it is safe to re-run and safe to abandon halfway — and you re-run
+it after the first release to swap npm from a token to trusted publishing.
+
+What it configures, and why each is needed:
+
 |                                                                                                                      | Why                                                                                                                                                                                                                                    |
 | -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | A **GitHub App** with Contents and Pull requests write, installed on the repo, as `GH_APP_ID` + `GH_APP_PRIVATE_KEY` | release-please has to open a PR, and this org does not let GitHub Actions do that. An App is not GitHub Actions, so the policy does not cover it — and unlike `GITHUB_TOKEN`, its pushes trigger workflows, so the release PR gets CI. |
@@ -443,7 +454,7 @@ it tags a release, which publishes to npm and JSR.
 | An **npm trusted publisher** for `@croutonian/with-openapi`                                                          | Publishing without a stored credential.                                                                                                                                                                                                |
 | The **JSR package** linked to this repository                                                                        | Same, on the JSR side.                                                                                                                                                                                                                 |
 
-Steps are in the comments at the top of
+To do it by hand instead, the same steps are in the comments at the top of
 [`release.yml`](./.github/workflows/release.yml).
 
 ### The first publish
