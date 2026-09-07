@@ -45,7 +45,7 @@ const cases = [
   { path: '/nope', status: 404 },
   { path: '/users/7', status: 405, init: { method: 'DELETE' } },
   { path: '/reference', status: 200 },
-  { path: '/reference/openapi.json', status: 200 },
+  { path: '/openapi.json', status: 200 },
 
   // Preflight, derived from the document: the path declares only `get`, so
   // that is the whole of Access-Control-Allow-Methods.

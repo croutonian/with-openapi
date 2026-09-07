@@ -29,12 +29,12 @@ describe('the Scalar reference endpoint', () => {
     const html = await res.text()
     expect(html).toContain(SCALAR_CDN_URL)
     expect(html).toContain("Scalar.createApiReference('#app'")
-    expect(html).toContain('"url":"/reference/openapi.json"')
+    expect(html).toContain('"url":"/openapi.json"')
     expect(html).toContain('<title>Test API</title>')
   })
 
   it('serves the document as JSON for the page to load', async () => {
-    const res = await handler()(get('/reference/openapi.json'))
+    const res = await handler()(get('/openapi.json'))
     expect(res.headers.get('content-type')).toBe(
       'application/json; charset=utf-8',
     )
@@ -86,7 +86,7 @@ describe('the Scalar reference endpoint', () => {
       reference: { html: (input) => `custom:${input.documentPath}` },
     })
     expect(await (await app(get('/reference'))).text()).toBe(
-      'custom:/reference/openapi.json',
+      'custom:/openapi.json',
     )
   })
 
@@ -95,10 +95,67 @@ describe('the Scalar reference endpoint', () => {
     expect((await handler()(get('/reference'))).status).toBe(200)
   })
 
-  it('is not relative to basePath', async () => {
+  // The default follows the mount, because a reference outside it is usually
+  // unreachable rather than merely unconventional -- a host that routes only
+  // /api/* here can never produce a pathname of /reference.
+  it('defaults to sitting under basePath', async () => {
     const app = handler({ basePath: '/api' })
-    expect((await app(get('/reference'))).status).toBe(200)
-    expect((await app(get('/api/reference'))).status).toBe(404)
+    expect((await app(get('/api/reference'))).status).toBe(200)
+    expect((await app(get('/api/openapi.json'))).status).toBe(200)
+    expect((await app(get('/reference'))).status).toBe(404)
+  })
+
+  it('takes an explicit path literally, so docs can live outside the mount', async () => {
+    const app = handler({ basePath: '/api/v1', reference: { path: '/docs' } })
+    expect((await app(get('/docs'))).status).toBe(200)
+    // The page moved; the document did not.
+    expect((await app(get('/api/v1/openapi.json'))).status).toBe(200)
+    expect((await app(get('/api/v1/docs'))).status).toBe(404)
+  })
+
+  it('is unmounted by default when there is no basePath', async () => {
+    expect((await handler()(get('/reference'))).status).toBe(200)
+  })
+
+  // The path this middleware matches and the URL a browser can reach are the
+  // same string only when nothing rewrites the path in front of it. Behind a
+  // gateway that strips a prefix they differ, and no single `documentPath`
+  // satisfies both: one spelling never serves the JSON, the other renders a
+  // page that then reports it could not load the document.
+  it('can advertise a document URL that is not the path it serves it at', async () => {
+    const app = handler({
+      basePath: '/api',
+      reference: {
+        path: '/api/reference',
+        documentPath: '/api/openapi.json',
+        documentUrl: '/functions/v1/api/openapi.json',
+      },
+    })
+
+    const html = await (await app(get('/api/reference'))).text()
+    expect(html).toContain('"url":"/functions/v1/api/openapi.json"')
+    expect(html).not.toContain('"url":"/api/openapi.json"')
+
+    // Still served where it says, not where it points.
+    expect((await app(get('/api/openapi.json'))).status).toBe(200)
+    expect((await app(get('/functions/v1/api/openapi.json'))).status).toBe(404)
+  })
+
+  it('defaults the advertised URL to the path it serves the document at', async () => {
+    const html = await (await handler()(get('/reference'))).text()
+    expect(html).toContain('"url":"/openapi.json"')
+  })
+
+  it('gives a custom page both spellings', async () => {
+    const app = handler({
+      reference: {
+        documentUrl: '/public/openapi.json',
+        html: (input) => `${input.documentPath} -> ${input.documentUrl}`,
+      },
+    })
+    expect(await (await app(get('/reference'))).text()).toBe(
+      '/openapi.json -> /public/openapi.json',
+    )
   })
 
   it('rejects a reference path that is not absolute', () => {

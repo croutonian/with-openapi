@@ -65,6 +65,13 @@ export interface OpenApiRejection {
   readonly method: string
   /** The request's pathname, before `basePath` is stripped. */
   readonly pathname: string
+  /**
+   * A more specific explanation than the kind's stock wording, when there is
+   * one to give. `route_not_found` uses it to say whether the pathname missed
+   * `basePath` or matched no template under it, which are the same status and
+   * very different mistakes.
+   */
+  readonly message?: string
   /** Path template that matched, when one did. */
   readonly route?: string
   /** Methods the route does declare. Set on `method_not_allowed`. */
@@ -182,7 +189,7 @@ export interface WithOpenApiConfig {
   /**
    * Serve a Scalar API reference and the document JSON. `true` takes every
    * default — the page at `/reference`, the document at
-   * `/reference/openapi.json`.
+   * `/openapi.json`.
    *
    * @defaultValue off
    */

@@ -129,6 +129,16 @@ callback before that response is built:
 | `unsupported_media_type` | 415    | The body's content type is not in the operation's `content`.            |
 | `validation_failed`      | 400    | A parameter or body failed its schema.                                  |
 
+`route_not_found` says which of its two causes it was, because they are the
+same status and very different mistakes — a `basePath` nothing starts with
+turns every route into a 404, and blaming the document sends you looking for a
+path that is already in it:
+
+```
+no operation in the API description matches "/nope"
+the pathname "/users/me" is outside basePath "/api/v1"
+```
+
 The default body:
 
 ```json
@@ -213,7 +223,16 @@ handy for customizing one kind and leaving the rest alone.
 entry in the document:
 
 - `GET /reference` — the HTML page
-- `GET /reference/openapi.json` — the document, for the page to load
+- `GET /openapi.json` — the document, for the page to load
+
+Both defaults are derived from `basePath`, so under `basePath: '/api'` they are
+`/api/reference` and `/api/openapi.json`. A reference outside the mount is
+usually unreachable rather than merely unconventional: a host that routes only
+`/api/*` to this handler can never produce a pathname of `/reference`.
+
+The document path is derived from the mount, **not** from `path` — the document
+is the artifact and the page is one view of it, so moving the page to `/docs`
+leaves the document where it was.
 
 ```ts
 withOpenApi({
@@ -238,11 +257,45 @@ entirely:
 
 ```ts
 reference: {
-  html: ({ documentPath }) => myOwnPage(documentPath)
+  html: ({ documentPath, documentUrl }) => myOwnPage(documentUrl)
 }
 ```
 
-The reference paths are absolute — they are **not** relative to `basePath`.
+A path you give explicitly is taken **literally** — `basePath` is not applied
+to it, so an API under `/api/v1` can still put its docs at `/docs`:
+
+```ts
+withOpenApi({ document, basePath: '/api/v1', reference: { path: '/docs' } })
+// -> /docs, not /api/v1/docs
+```
+
+Only the default is derived from the mount.
+
+### Behind a gateway that rewrites the path
+
+`documentPath` is matched against the pathname this middleware is handed.
+`documentUrl` is what the page tells the browser to fetch. They default to the
+same string, which is right until something rewrites the path in front of you —
+and then no single value works: one spelling never serves the JSON, the other
+renders a page that loads and immediately reports that it could not load the
+document.
+
+Supabase Edge Functions is that case by default. The platform routes on
+`/functions/v1/<fn>/...`, strips `/functions/v1`, and hands the worker
+`/<fn>/...`:
+
+```ts
+withOpenApi({
+  document,
+  // What the worker sees — not the public URL, and not `servers[0].url`.
+  basePath: '/api',
+  reference: {
+    path: '/api/reference',
+    documentPath: '/api/openapi.json', // where this middleware serves it
+    documentUrl: '/functions/v1/api/openapi.json', // where a browser fetches it
+  },
+})
+```
 
 ## Parameters
 

@@ -22,6 +22,8 @@ export const SCALAR_CDN_URL =
 export interface ScalarHtmlInput {
   /** Absolute path the document JSON is served from. */
   readonly documentPath: string
+  /** URL the page should fetch the document from. */
+  readonly documentUrl: string
   /** Page `<title>`. */
   readonly title: string
   /** Script URL for Scalar's standalone build. */
@@ -36,16 +38,46 @@ export interface ScalarReferenceOptions {
    * Path the HTML page is served from. Matched exactly, and *before* the
    * document's own routes, so it does not need to appear in the document.
    *
-   * @defaultValue `'/reference'`
+   * Given explicitly it is taken literally — `basePath` is **not** applied,
+   * so an API under `/api/v1` can still put its docs at `/docs`. The default
+   * is derived from `basePath` instead, because a reference sitting outside
+   * the mount is usually unreachable rather than merely unconventional: on a
+   * host that routes only `/api/*` to this handler, nothing can produce a
+   * pathname of `/reference`.
+   *
+   * @defaultValue `` `${basePath}/reference` ``, or `'/reference'` unmounted
    */
   path?: string
 
   /**
-   * Path the document JSON is served from.
+   * Path the document JSON is served from. Matched against the pathname this
+   * middleware is handed.
    *
-   * @defaultValue `` `${path}/openapi.json` ``
+   * Derived from `basePath`, not from {@link path}: the document is the
+   * artifact and the page is one view of it, so moving the page does not move
+   * the document, and the conventional `/openapi.json` is where people —
+   * and tooling — look for it.
+   *
+   * @defaultValue `` `${basePath}/openapi.json` ``, or `'/openapi.json'`
    */
   documentPath?: string
+
+  /**
+   * URL the page tells the browser to fetch the document from.
+   *
+   * Defaults to {@link documentPath}, which is correct whenever the pathname
+   * this middleware is handed is the one a browser can reach. Behind a gateway
+   * that rewrites the path, it is not, and the two have to be set separately:
+   * on Supabase Edge Functions the platform routes on
+   * `/functions/v1/<fn>/...` and hands the worker `/<fn>/...`, so the document
+   * is *served* at `/api/openapi.json` and *fetched* from
+   * `/functions/v1/api/openapi.json`. No single value satisfies both -- set
+   * one and the JSON never serves, set the other and the page loads and then
+   * reports that it could not load the document.
+   *
+   * @defaultValue {@link documentPath}
+   */
+  documentUrl?: string
 
   /** Page title. @defaultValue the document's `info.title`, or `'API Reference'` */
   title?: string
@@ -56,7 +88,7 @@ export interface ScalarReferenceOptions {
   /**
    * Extra options merged into the `Scalar.createApiReference` config — theme,
    * `darkMode`, `proxyUrl`, and anything else Scalar accepts. `url` is set
-   * from {@link documentPath} and can be overridden here.
+   * from {@link documentUrl} and can be overridden here.
    *
    * @see https://scalar.com/products/api-references/configuration
    */
@@ -73,6 +105,7 @@ export interface ScalarReferenceOptions {
 export interface ResolvedReference {
   readonly path: string
   readonly documentPath: string
+  readonly documentUrl: string
   readonly cacheControl: string
   render(): string
 }
@@ -129,25 +162,39 @@ function joinPath(base: string, child: string): string {
 export function resolveReference(
   document: OpenAPIObject,
   options: ScalarReferenceOptions,
+  basePath?: string,
 ): ResolvedReference {
-  const path = options.path ?? '/reference'
+  // An explicit path is literal; only the default follows the mount. See
+  // ScalarReferenceOptions.path for why the two differ.
+  const path = options.path ?? joinPath(basePath ?? '', 'reference')
   if (!path.startsWith('/')) {
     throw new Error(
       `withOpenApi: reference.path must start with "/", got ${JSON.stringify(path)}`,
     )
   }
-  const documentPath = options.documentPath ?? joinPath(path, 'openapi.json')
+  const documentPath =
+    options.documentPath ?? joinPath(basePath ?? '', 'openapi.json')
+  // Where the browser fetches it, which is only the same string when nothing
+  // rewrites the path in front of this middleware.
+  const documentUrl = options.documentUrl ?? documentPath
   const title = options.title ?? document.info?.title ?? 'API Reference'
   const cdnUrl = options.cdnUrl ?? SCALAR_CDN_URL
-  const configuration = { url: documentPath, ...options.configuration }
+  const configuration = { url: documentUrl, ...options.configuration }
   const render = options.html ?? renderScalarHtml
 
   // Rendered once: the inputs cannot change between requests.
-  const page = render({ documentPath, title, cdnUrl, configuration })
+  const page = render({
+    documentPath,
+    documentUrl,
+    title,
+    cdnUrl,
+    configuration,
+  })
 
   return {
     path,
     documentPath,
+    documentUrl,
     cacheControl: options.cacheControl ?? 'no-cache',
     render: () => page,
   }
