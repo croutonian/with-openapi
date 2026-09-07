@@ -276,9 +276,9 @@ todo "pkg.pr.new install cannot be read from here — stage 3 can test it"
 if npm_pkg_exists; then
   ok "$NPM_PKG exists on npm — a trusted publisher can be configured"
 else
-  todo "$NPM_PKG is not on npm yet — the first publish needs a token (stage 4)"
+  todo "$NPM_PKG is not on npm yet — stage 4 publishes it once from here"
 fi
-have_secret NPM_TOKEN && note "  NPM_TOKEN is set (delete it once trusted publishing works)" || true
+have_secret NPM_TOKEN && note "  NPM_TOKEN is set — stage 4 offers to remove it" || true
 JSR_REPO="$(jsr_linked_repo)"
 [[ -n "$JSR_REPO" ]] && ok "JSR linked to $JSR_REPO" || todo "JSR package not linked to a repo (stage 5)"
 
@@ -370,60 +370,92 @@ fi
 # ── 4 ─────────────────────────────────────────────────────────────────────
 stage "npm — publishing"
 
-if npm_pkg_exists; then
-  say "$NPM_PKG is on npm, so it can use trusted publishing: the workflow"
-  say "authenticates with its OIDC token and the repo stores no credential."
+# No deep links into npmjs.com here on purpose. It serves 403 to anything that
+# is not a browser, so a URL cannot be checked before shipping it — and the
+# first attempt at this stage guessed a token page that did not exist. Only the
+# canonical package URL is opened; everything past it is npm's own documented
+# click path.
+
+PUBLISH_LOCALLY=yes
+
+if ! npm_pkg_exists && have_secret NPM_TOKEN; then
+  say "Trusted publishing is configured against a package that already exists,"
+  say "and $NPM_PKG does not yet — so something has to make the first one."
   printf '\n'
-  open_url "https://www.npmjs.com/package/$NPM_PKG/access"
-  step "Scroll to 'Trusted publisher' → 'GitHub Actions'."
-  step "Repository: $REPO"
+  say "NPM_TOKEN is already set, so CI can do it: merge the release PR and the"
+  say "workflow publishes with that token. Nothing more is needed here."
+  printf '\n'
+  confirm "Publish from this machine instead?" || PUBLISH_LOCALLY=no
+  [[ "$PUBLISH_LOCALLY" == "no" ]] \
+    && SKIPPED+=("first publish happens when you merge the release PR; re-run this wizard afterwards to switch to trusted publishing")
+  printf '\n'
+fi
+
+if ! npm_pkg_exists && [[ "$PUBLISH_LOCALLY" == "yes" ]]; then
+  say "Publishing once from here: your login, your 2FA, no token involved."
+  say "CI takes over from the next release."
+  printf '\n'
+
+  NPM_USER="$(npm whoami 2>/dev/null || true)"
+  if [[ -z "$NPM_USER" ]]; then
+    step "You are not logged in to npm. Running 'npm login' — it opens a browser."
+    pause "Press Enter to start the login."
+    npm login || true
+    NPM_USER="$(npm whoami 2>/dev/null || true)"
+  fi
+
+  if [[ -z "$NPM_USER" ]]; then
+    bad "Still not logged in to npm."
+    SKIPPED+=("npm login, then: npm publish --access public")
+  else
+    ok "logged in to npm as $NPM_USER"
+    VERSION="$(node -p "require('./package.json').version" 2>/dev/null || echo '?')"
+    printf '\n'
+    warn "This publishes $NPM_PKG@$VERSION to the public registry."
+    note "  A published version is permanent — it can be deprecated, but the"
+    note "  number can never be reused. Nothing else in this wizard is like this."
+    printf '\n'
+    if confirm "Publish $NPM_PKG@$VERSION now?"; then
+      if npm run build && npm publish --access public; then
+        ok "published $NPM_PKG@$VERSION"
+      else
+        bad "publish failed — see the output above"
+        SKIPPED+=("npm publish --access public")
+      fi
+    else
+      SKIPPED+=("first publish: npm publish --access public (then re-run this wizard)")
+    fi
+  fi
+  printf '\n'
+fi
+
+if npm_pkg_exists; then
+  say "Now point npm at this repository, so the release workflow can publish"
+  say "with its OIDC token and nothing has to store a credential."
+  printf '\n'
+  open_url "https://www.npmjs.com/package/$NPM_PKG"
+  step "On the package page: 'Settings' tab → 'Trusted publishing'."
+  step "Select publisher: GitHub Actions."
+  step "Organization or user: ${REPO%%/*}"
+  step "Repository: ${REPO##*/}"
   step "Workflow filename: release.yml"
+  note "  Filename only, not a path. Leave 'Environment name' empty."
   pause "Press Enter once the trusted publisher is saved."
 
   if have_secret NPM_TOKEN; then
     printf '\n'
-    say "NPM_TOKEN was only ever needed to bootstrap the first publish."
-    if confirm "Delete the NPM_TOKEN secret now?"; then
+    say "NPM_TOKEN is only a fallback for publishing without a trusted"
+    say "publisher. With one configured, the repo needs no npm credential."
+    if confirm "Delete the NPM_TOKEN secret?"; then
       gh secret delete NPM_TOKEN >/dev/null 2>&1 \
-        && ok "deleted NPM_TOKEN — the repo now holds no publish credential" \
+        && ok "deleted NPM_TOKEN" \
         || warn "could not delete NPM_TOKEN"
     else
       SKIPPED+=("delete the NPM_TOKEN secret once trusted publishing is verified")
     fi
   fi
 else
-  say "A trusted publisher is configured against a package that already exists,"
-  say "and $NPM_PKG does not yet — so the first publish needs a token. You"
-  say "delete it straight afterwards; re-run this wizard and it walks you"
-  say "through swapping to trusted publishing."
-  printf '\n'
-  if have_secret NPM_TOKEN; then
-    ok "NPM_TOKEN is already set"
-  else
-    ask NPM_USER "Your npm username:"
-    if [[ -n "$NPM_USER" ]]; then
-      open_url "https://www.npmjs.com/settings/${NPM_USER}/tokens/granular-access-tokens/new"
-    else
-      warn "No username given — go to npmjs.com → avatar → Access Tokens → Generate."
-    fi
-    step "Expiration: 7 days is plenty — this token is deleted after one publish."
-    step "Packages and scopes: Read and write."
-    step "Select scopes → @$JSR_SCOPE (or 'All packages' if the scope is new)."
-    step "Click 'Generate token' and copy it."
-    ask_secret NPM_TOKEN_VALUE "Paste the token:"
-
-    if [[ -z "$NPM_TOKEN_VALUE" ]]; then
-      SKIPPED+=("NPM_TOKEN — nothing pasted")
-    elif curl -fsS -o /dev/null -H "Authorization: Bearer $NPM_TOKEN_VALUE" \
-           https://registry.npmjs.org/-/whoami 2>/dev/null; then
-      ok "token authenticates against the registry"
-      set_secret NPM_TOKEN "$NPM_TOKEN_VALUE"
-      SKIPPED+=("after the first release: add the npm trusted publisher, then delete NPM_TOKEN (re-run this wizard)")
-    else
-      bad "That token was rejected by the registry — not saving it."
-      SKIPPED+=("NPM_TOKEN — token was rejected, re-run this wizard")
-    fi
-  fi
+  SKIPPED+=("npm trusted publisher — set it up after the first publish (re-run this wizard)")
 fi
 
 # ── 5 ─────────────────────────────────────────────────────────────────────
@@ -460,8 +492,8 @@ have_secret GH_APP_ID && have_secret GH_APP_PRIVATE_KEY \
 if npm_pkg_exists; then ok "$NPM_PKG published"
 else todo "$NPM_PKG not published yet"; fi
 
-have_secret NPM_TOKEN && note "NPM_TOKEN set (bootstrap; delete after first release)" \
-  || ok "no npm credential stored"
+have_secret NPM_TOKEN && warn "NPM_TOKEN still set — not needed once trusted publishing works" \
+  || ok "no npm credential stored in the repository"
 
 JSR_REPO="$(jsr_linked_repo)"
 [[ "$JSR_REPO" == "$REPO" ]] && ok "JSR linked to $JSR_REPO" || bad "JSR not linked"

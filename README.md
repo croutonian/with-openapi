@@ -460,10 +460,12 @@ To do it by hand instead, the same steps are in the comments at the top of
 ### The first publish
 
 Trusted publishing is configured against a package that already exists, so the
-very first release of a new name has nothing to configure it on. Set an
-`NPM_TOKEN` secret, ship `0.1.0`, add the trusted publisher on npmjs.com, then
-**delete the secret** — with it gone the workflow falls back to OIDC and the
-repository holds no publish credential at all.
+very first release of a new name has nothing to configure it on. The wizard
+resolves that by publishing `0.1.0` from your machine — your npm login, your
+2FA, no token created and none stored. CI takes over from the next release.
+
+`release.yml` also accepts an `NPM_TOKEN` secret as a fallback if you would
+rather bootstrap from CI, but nothing needs it.
 
 Between releases, every branch push and pull request publishes an installable
 preview to [pkg.pr.new](https://pkg.pr.new):
