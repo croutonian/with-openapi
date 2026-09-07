@@ -27,6 +27,7 @@ function param(
   return {
     name: spec.name,
     in: spec.in,
+    description: spec.description,
     required: spec.required ?? spec.in === 'path',
     style,
     explode: spec.explode ?? (style === 'form' || style === 'deepObject'),

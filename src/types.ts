@@ -35,8 +35,18 @@ export interface OpenApiViolation {
   readonly location?: string
   /** The JSON Schema keyword that failed, when one did. */
   readonly keyword?: string
-  /** Human-readable description. */
+  /** What the validator objected to, mechanically. */
   readonly message: string
+  /**
+   * The document's own prose for whatever failed — the Parameter Object's
+   * `description`, or the `description` on the schema the failing keyword
+   * belongs to.
+   *
+   * {@link message} says what is wrong; this says what the thing is *for*, and
+   * it is the half a caller can usually act on. Absent when the document does
+   * not describe that field, or when `validate.describe` is off.
+   */
+  readonly description?: string
 }
 
 /** Why the middleware is refusing a request. */
@@ -91,6 +101,18 @@ export interface OpenApiValidateOptions {
   additionalQuery?: 'allow' | 'reject'
   /** Status for a validation failure. @defaultValue `400` */
   status?: number
+  /**
+   * Include the document's `description` prose on each violation, so a caller
+   * is told what a field is for and not only that it is wrong.
+   *
+   * A document's descriptions are written for its consumers, which is who
+   * reads these errors — but turn this off if yours carries notes you would
+   * rather not return in a response body.
+   *
+   * @defaultValue `true`
+   */
+  describe?: boolean
+
   /**
    * Most violations to report in one rejection. One bad array in a large body
    * can fail thousands of times, and nobody reads past the first few.

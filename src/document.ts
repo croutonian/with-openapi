@@ -138,6 +138,8 @@ export type Segment =
 export interface IndexedParameter {
   readonly name: string
   readonly in: ParameterLocation
+  /** The Parameter Object's own prose, surfaced on any violation about it. */
+  readonly description: string | undefined
   readonly required: boolean
   readonly style: ParameterStyle
   readonly explode: boolean
@@ -158,6 +160,8 @@ export interface IndexedContent {
 /** A Request Body Object, flattened. */
 export interface IndexedRequestBody {
   readonly required: boolean
+  /** The Request Body Object's own prose, surfaced on body-level violations. */
+  readonly description: string | undefined
   readonly contents: readonly IndexedContent[]
 }
 
@@ -243,6 +247,7 @@ function indexParameter(
   return {
     name: param.name,
     in: param.in,
+    description: param.description,
     // A path parameter is required by definition; the spec says so and a
     // document that omits the flag is still describing a required value.
     required: param.in === 'path' ? true : (param.required ?? false),
@@ -296,7 +301,11 @@ function indexRequestBody(
       resolved: resolveSchema(document, media?.schema),
     }),
   )
-  return { required: body.required ?? false, contents }
+  return {
+    required: body.required ?? false,
+    description: body.description,
+    contents,
+  }
 }
 
 function queryConsumption(params: readonly IndexedParameter[]): {

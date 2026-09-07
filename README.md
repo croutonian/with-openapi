@@ -141,7 +141,8 @@ The default body:
       "name": "limit",
       "location": "#",
       "keyword": "maximum",
-      "message": "999 is greater than 100."
+      "message": "999 is greater than 100.",
+      "description": "How many users to return. Between 1 and 100."
     }
   ]
 }
@@ -150,6 +151,45 @@ The default body:
 Every violation is reported, not just the first, capped at `maxViolations`.
 `location` is a JSON pointer into the offending value, which for a body is the
 path to the property that failed.
+
+### Descriptions
+
+`message` is the validator's, and says what is mechanically wrong.
+`description` is the **document's own prose** for whatever failed, and is
+usually the half a caller can act on. You wrote it once; there is no reason for
+an error response to throw it away.
+
+It is resolved from the most specific place that has it:
+
+| Violation                   | Described by                                                 |
+| --------------------------- | ------------------------------------------------------------ |
+| a parameter                 | its Parameter Object's `description`, else its schema's      |
+| a body property             | the `description` on the schema that failed, `$ref` followed |
+| a missing required property | that **property's** `description`, not its container's       |
+| a body that was never sent  | the Request Body Object's `description`                      |
+
+```
+missing required param   999 is greater than 100.
+                       → How many users to return. Between 1 and 100.
+
+body #/manager/name      String is too short (0 < 1).
+                       → Display name. Shown to teammates.
+
+body                     Instance does not have required property "name".
+                       → Display name. Shown to teammates.
+```
+
+That third row is the one worth pointing at: `required` fails against the
+_object_, so the obvious implementation describes the object — "A person with
+access to the workspace" — which says nothing about what is missing. The
+property is named only inside the validator's message, so it is read from
+there, and falls back to the container's prose if that wording ever changes.
+
+A field with nothing written about it simply has no `description`. Set
+`validate: { describe: false }` to leave them all off — descriptions are
+written for a document's consumers, who are the same people reading these
+errors, but turn it off if yours carries notes you would rather not return in
+a response body.
 
 To answer in your own error envelope:
 

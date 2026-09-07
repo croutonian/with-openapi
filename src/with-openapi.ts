@@ -34,6 +34,7 @@ import { createRouter } from './router.js'
 import { resolveReference, type ScalarReferenceOptions } from './reference.js'
 import {
   createSchemaValidator,
+  describeFailure,
   draftFor,
   type OutputUnit,
   type SchemaValidator,
@@ -72,6 +73,7 @@ interface ResolvedValidateOptions {
   readonly body: boolean
   readonly additionalQuery: 'allow' | 'reject'
   readonly status: number
+  readonly describe: boolean
   readonly maxViolations: number
 }
 
@@ -88,6 +90,7 @@ function resolveValidateOptions(
     body: given.body ?? true,
     additionalQuery: given.additionalQuery ?? 'allow',
     status: given.status ?? 400,
+    describe: given.describe ?? true,
     maxViolations: given.maxViolations ?? 20,
   }
 }
@@ -119,12 +122,14 @@ function toViolation(
   location: ParameterIn | 'body',
   name: string | undefined,
   unit: OutputUnit,
+  description: string | undefined,
 ): OpenApiViolation {
   return {
     in: location,
     ...(name === undefined ? {} : { name }),
     location: unit.instanceLocation,
     keyword: unit.keyword,
+    ...(description === undefined ? {} : { description }),
     // A boolean `false` schema is how `additionalProperties: false` refuses a
     // key. The validator's own wording for it ("False boolean schema.") says
     // nothing to whoever sent the request.
@@ -181,6 +186,7 @@ function unmatched(
  * intermediate records per request.
  */
 function collectParameters(
+  document: OpenAPIObject,
   operation: IndexedOperation,
   sources: ParameterSources,
   options: ResolvedValidateOptions | undefined,
@@ -192,6 +198,8 @@ function collectParameters(
   params: Record<ParameterIn, Record<string, unknown>>,
   violations: OpenApiViolation[],
 ): void {
+  const describe = options?.describe === true
+
   for (const location of PARAMETER_LOCATIONS) {
     const checking = options !== undefined && options[location]
     for (const param of operation.parameters[location]) {
@@ -203,6 +211,9 @@ function collectParameters(
             in: location,
             name: param.name,
             message: `required ${location} parameter "${param.name}" is missing`,
+            ...(describe && param.description !== undefined
+              ? { description: param.description }
+              : {}),
           })
         }
         continue
@@ -219,7 +230,17 @@ function collectParameters(
         validateSchema !== undefined
       ) {
         for (const unit of validateSchema(value, param.schema)) {
-          violations.push(toViolation(location, param.name, unit))
+          violations.push(
+            toViolation(
+              location,
+              param.name,
+              unit,
+              describe
+                ? (param.description ??
+                    describeFailure(document, param.schema, unit))
+                : undefined,
+            ),
+          )
         }
       }
     }
@@ -439,6 +460,7 @@ export const withOpenApi: Middleware<
       }
 
       collectParameters(
+        document,
         operation,
         {
           pathValues: match.pathValues,
@@ -508,6 +530,10 @@ export const withOpenApi: Middleware<
             violations.push({
               in: 'body',
               message: 'a request body is required',
+              ...(options?.describe === true &&
+              requestBody.description !== undefined
+                ? { description: requestBody.description }
+                : {}),
             })
           }
         } else if (read.outcome === 'malformed') {
@@ -521,11 +547,18 @@ export const withOpenApi: Middleware<
             read.content.schema !== undefined &&
             validateSchema
           ) {
-            for (const unit of validateSchema(
-              read.value,
-              read.content.schema,
-            )) {
-              violations.push(toViolation('body', undefined, unit))
+            const schema = read.content.schema
+            for (const unit of validateSchema(read.value, schema)) {
+              violations.push(
+                toViolation(
+                  'body',
+                  undefined,
+                  unit,
+                  options?.describe === true
+                    ? describeFailure(document, schema, unit)
+                    : undefined,
+                ),
+              )
             }
           }
         }

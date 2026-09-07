@@ -25,6 +25,8 @@ import type {
   SchemaObject,
 } from 'openapi3-ts/oas31'
 
+import { resolveRef } from './document.js'
+
 export type { OutputUnit, SchemaDraft }
 
 /**
@@ -161,6 +163,96 @@ function addPointerAliases(
     if (!uri.startsWith(`${root}#`)) continue
     const pointer = uri.slice(root.length)
     lookup[pointer] ??= schema
+  }
+}
+
+/**
+ * The `description` of the schema the failing keyword belongs to.
+ *
+ * A validator says what is mechanically wrong — `"-3 is less than 0."` — while
+ * the document says what the field is *for*. The second is the half a caller
+ * can usually act on, and it is already written; this goes and gets it.
+ *
+ * `keywordLocation` is a JSON pointer into the schema in which `$ref` appears
+ * as a literal segment, meaning "the validator followed the reference here",
+ * so walking it means resolving those hops as they come. The final segment is
+ * the keyword itself, so the node before it is the schema that failed.
+ *
+ * Never throws. A description is a nicety, and a walk that does not land is
+ * simply one violation without one.
+ */
+export function describeFailure(
+  document: OpenAPIObject,
+  rootSchema: SchemaObject | ReferenceObject,
+  unit: OutputUnit,
+): string | undefined {
+  const node = schemaAt(document, rootSchema, unit.keywordLocation)
+  if (node === undefined) return undefined
+
+  // `required` fails against the *object*, but the thing worth describing is
+  // the property that is missing. The validator names it only inside its
+  // message, so read it from there — and fall back to the object's own prose
+  // if that wording ever changes, rather than losing the description.
+  if (unit.keyword === 'required') {
+    const missing = /required property "([^"]+)"/.exec(unit.error)?.[1]
+    const property =
+      missing === undefined ? undefined : node.properties?.[missing]
+    if (property !== undefined && typeof property !== 'boolean') {
+      const described = descriptionOf(follow(document, property))
+      if (described !== undefined) return described
+    }
+  }
+
+  return descriptionOf(node)
+}
+
+/** Walk a schema-side JSON pointer to the schema holding the failing keyword. */
+function schemaAt(
+  document: OpenAPIObject,
+  rootSchema: SchemaObject | ReferenceObject,
+  keywordLocation: string,
+): SchemaObject | undefined {
+  if (!keywordLocation.startsWith('#')) return undefined
+
+  const segments = keywordLocation
+    .slice(1)
+    .split('/')
+    .filter((part) => part !== '')
+  // Drop the keyword: what failed is the schema holding it.
+  segments.pop()
+
+  let node: unknown = rootSchema
+  for (const raw of segments) {
+    if (typeof node !== 'object' || node === null) return undefined
+    if (raw === '$ref') {
+      node = follow(document, node)
+      continue
+    }
+    const key = decodeURIComponent(raw).replace(/~1/g, '/').replace(/~0/g, '~')
+    node = (node as Record<string, unknown>)[key]
+  }
+
+  // The landing node can itself be a bare reference — a property spelled
+  // `{ $ref: '#/components/schemas/Email' }` keeps its prose over there.
+  return follow(document, node)
+}
+
+function descriptionOf(schema: SchemaObject | undefined): string | undefined {
+  const description = schema?.description
+  return typeof description === 'string' && description !== ''
+    ? description
+    : undefined
+}
+
+function follow(
+  document: OpenAPIObject,
+  node: unknown,
+): SchemaObject | undefined {
+  if (typeof node !== 'object' || node === null) return undefined
+  try {
+    return resolveRef<SchemaObject>(document, node as SchemaObject)
+  } catch {
+    return undefined
   }
 }
 
