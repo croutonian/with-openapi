@@ -329,6 +329,7 @@ export const withOpenApi: Middleware<
             config.reference === true
               ? {}
               : (config.reference as ScalarReferenceOptions),
+            basePath,
           )
     // Serialized once — the document does not change between requests.
     const documentJson =

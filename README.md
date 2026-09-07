@@ -223,7 +223,16 @@ handy for customizing one kind and leaving the rest alone.
 entry in the document:
 
 - `GET /reference` — the HTML page
-- `GET /reference/openapi.json` — the document, for the page to load
+- `GET /openapi.json` — the document, for the page to load
+
+Both defaults are derived from `basePath`, so under `basePath: '/api'` they are
+`/api/reference` and `/api/openapi.json`. A reference outside the mount is
+usually unreachable rather than merely unconventional: a host that routes only
+`/api/*` to this handler can never produce a pathname of `/reference`.
+
+The document path is derived from the mount, **not** from `path` — the document
+is the artifact and the page is one view of it, so moving the page to `/docs`
+leaves the document where it was.
 
 ```ts
 withOpenApi({
@@ -252,7 +261,15 @@ reference: {
 }
 ```
 
-The reference paths are absolute — they are **not** relative to `basePath`.
+A path you give explicitly is taken **literally** — `basePath` is not applied
+to it, so an API under `/api/v1` can still put its docs at `/docs`:
+
+```ts
+withOpenApi({ document, basePath: '/api/v1', reference: { path: '/docs' } })
+// -> /docs, not /api/v1/docs
+```
+
+Only the default is derived from the mount.
 
 ### Behind a gateway that rewrites the path
 

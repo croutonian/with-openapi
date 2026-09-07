@@ -38,7 +38,14 @@ export interface ScalarReferenceOptions {
    * Path the HTML page is served from. Matched exactly, and *before* the
    * document's own routes, so it does not need to appear in the document.
    *
-   * @defaultValue `'/reference'`
+   * Given explicitly it is taken literally — `basePath` is **not** applied,
+   * so an API under `/api/v1` can still put its docs at `/docs`. The default
+   * is derived from `basePath` instead, because a reference sitting outside
+   * the mount is usually unreachable rather than merely unconventional: on a
+   * host that routes only `/api/*` to this handler, nothing can produce a
+   * pathname of `/reference`.
+   *
+   * @defaultValue `` `${basePath}/reference` ``, or `'/reference'` unmounted
    */
   path?: string
 
@@ -46,7 +53,12 @@ export interface ScalarReferenceOptions {
    * Path the document JSON is served from. Matched against the pathname this
    * middleware is handed.
    *
-   * @defaultValue `` `${path}/openapi.json` ``
+   * Derived from `basePath`, not from {@link path}: the document is the
+   * artifact and the page is one view of it, so moving the page does not move
+   * the document, and the conventional `/openapi.json` is where people —
+   * and tooling — look for it.
+   *
+   * @defaultValue `` `${basePath}/openapi.json` ``, or `'/openapi.json'`
    */
   documentPath?: string
 
@@ -150,14 +162,18 @@ function joinPath(base: string, child: string): string {
 export function resolveReference(
   document: OpenAPIObject,
   options: ScalarReferenceOptions,
+  basePath?: string,
 ): ResolvedReference {
-  const path = options.path ?? '/reference'
+  // An explicit path is literal; only the default follows the mount. See
+  // ScalarReferenceOptions.path for why the two differ.
+  const path = options.path ?? joinPath(basePath ?? '', 'reference')
   if (!path.startsWith('/')) {
     throw new Error(
       `withOpenApi: reference.path must start with "/", got ${JSON.stringify(path)}`,
     )
   }
-  const documentPath = options.documentPath ?? joinPath(path, 'openapi.json')
+  const documentPath =
+    options.documentPath ?? joinPath(basePath ?? '', 'openapi.json')
   // Where the browser fetches it, which is only the same string when nothing
   // rewrites the path in front of this middleware.
   const documentUrl = options.documentUrl ?? documentPath
