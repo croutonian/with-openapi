@@ -231,8 +231,16 @@ confirm_app_installed() {
 
 # npm_pkg_exists — whether the package name is on the registry yet. Decides
 # whether a trusted publisher can be configured at all.
+#
+# The unique query parameter is not decoration. registry.npmjs.org sits behind
+# Cloudflare with `cache-control: max-age=300`, so for five minutes after a
+# publish this path still answers 404 from cache — exactly when a wizard is
+# most likely to ask. A `Cache-Control: no-cache` request header is ignored;
+# varying the URL is what actually reaches the origin.
 npm_pkg_exists() {
-  curl -fsS -o /dev/null "https://registry.npmjs.org/$(printf '%s' "$NPM_PKG" | sed 's|/|%2F|')" 2>/dev/null
+  curl -fsS -o /dev/null \
+    "https://registry.npmjs.org/$(printf '%s' "$NPM_PKG" | sed 's|/|%2F|')?cb=$RANDOM$RANDOM" \
+    2>/dev/null
 }
 
 # jsr_linked_repo — the GitHub repo linked on JSR, or empty when unlinked.
@@ -439,33 +447,25 @@ stage "npm — publishing"
 # canonical package URL is opened; everything past it is npm's own documented
 # click path.
 
-PUBLISH_LOCALLY=yes
+NPM_PUBLISHED=no
 
-if ! npm_pkg_exists && have_secret NPM_TOKEN; then
-  say "Trusted publishing is configured against a package that already exists,"
-  say "and $NPM_PKG does not yet — so something has to make the first one."
-  printf '\n'
-  say "NPM_TOKEN is set, so CI will try — but a token cannot answer a one-time"
-  say "password, and npm asks for one on every write unless the account's 2FA"
-  say "setting is 'Authorization only'. If yours is not, that publish fails with"
-  say "EOTP and only a human can get the first version out."
-  printf '\n'
-  note "  Publishing from here always works and needs no account changes."
-  printf '\n'
-  confirm "Publish from this machine? (recommended)" || PUBLISH_LOCALLY=no
-  [[ "$PUBLISH_LOCALLY" == "no" ]] \
-    && SKIPPED+=("first publish: merge the release PR and hope the token can write, or run npm publish --access public here")
-  printf '\n'
-fi
-
-if ! npm_pkg_exists && [[ "$PUBLISH_LOCALLY" == "yes" ]]; then
-  say "Publishing once from here: your login, your 2FA, no token involved."
-  say "CI takes over from the next release."
+if ! npm_pkg_exists; then
+  say "Trusted publishing attaches to a package that already exists, and"
+  say "$NPM_PKG does not yet. Publishing once from here is the way in:"
+  say "your login, your 2FA, no token involved. CI takes over afterwards."
+  if have_secret NPM_TOKEN; then
+    printf '\n'
+    note "  NPM_TOKEN is set, but a token cannot answer npm's one-time password"
+    note "  prompt. If the account requires 2FA for writes, a CI publish fails"
+    note "  with EOTP — so this is not offered as an alternative."
+  fi
   printf '\n'
 
   NPM_USER="$(npm whoami 2>/dev/null || true)"
   if [[ -z "$NPM_USER" ]]; then
-    step "You are not logged in to npm. Running 'npm login' — it opens a browser."
+    step "Not logged in to npm. Running 'npm login' — it opens a browser."
+    note "  A stale token in ~/.npmrc reads as logged out, and makes publish"
+    note "  fail with a confusing 404 rather than an auth error."
     pause "Press Enter to start the login."
     npm login || true
     NPM_USER="$(npm whoami 2>/dev/null || true)"
@@ -485,6 +485,7 @@ if ! npm_pkg_exists && [[ "$PUBLISH_LOCALLY" == "yes" ]]; then
     if confirm "Publish $NPM_PKG@$VERSION now?"; then
       if npm run build && npm publish --access public; then
         ok "published $NPM_PKG@$VERSION"
+        NPM_PUBLISHED=yes
       else
         bad "publish failed — see the output above"
         SKIPPED+=("npm publish --access public")
@@ -496,7 +497,21 @@ if ! npm_pkg_exists && [[ "$PUBLISH_LOCALLY" == "yes" ]]; then
   printf '\n'
 fi
 
-if npm_pkg_exists; then
+# Trust the publish that just happened over a re-query: the CDN would answer
+# from a cache written before it. And where the registry still says no, ask —
+# a wrong reading should never be able to end the stage on its own.
+NPM_READY=no
+if [[ "$NPM_PUBLISHED" == "yes" ]] || npm_pkg_exists; then
+  NPM_READY=yes
+else
+  printf '\n'
+  warn "The registry says $NPM_PKG is not published."
+  note "  It caches for five minutes, so a very recent publish can read as"
+  note "  missing. https://www.npmjs.com/package/$NPM_PKG settles it."
+  confirm "Is it published?" && NPM_READY=yes
+fi
+
+if [[ "$NPM_READY" == "yes" ]]; then
   say "Now point npm at this repository, so the release workflow can publish"
   say "with its OIDC token and nothing has to store a credential."
   printf '\n'
