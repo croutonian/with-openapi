@@ -16,11 +16,13 @@ import type {
 } from 'openapi3-ts/oas31'
 
 import { readBody } from './body.js'
+import { createCorsPolicy } from './cors.js'
 import {
   indexDocument,
   isHttpMethod,
   resolveSchema,
   type IndexedOperation,
+  type IndexedRoute,
 } from './document.js'
 import {
   coerceToSchema,
@@ -277,7 +279,8 @@ export const withOpenApi: Middleware<
     // here: nothing below depends on an environment value, so there is no
     // reason to defer it to the first request.
     const { document } = config
-    const router = createRouter(indexDocument(document))
+    const routes = indexDocument(document)
+    const router = createRouter(routes)
     const options = resolveValidateOptions(config.validate)
     const coerce = config.coerce ?? true
     const basePath = normalizeBasePath(config.basePath)
@@ -310,13 +313,37 @@ export const withOpenApi: Middleware<
     const documentJson =
       reference === undefined ? undefined : JSON.stringify(document)
 
-    return async (req) => {
-      const respond = async (rejection: OpenApiRejection): Promise<Response> =>
-        (await config.reject?.(rejection, req)) ??
-        defaultRejectionResponse(rejection)
+    const cors =
+      config.cors === undefined
+        ? undefined
+        : createCorsPolicy(document, routes, config.cors)
+
+    /**
+     * One request, taken to the point where it either has an answer of its own
+     * or a contribution to hand downstream.
+     *
+     * The matched route is reported alongside, because the CORS response phase
+     * derives `Access-Control-Expose-Headers` from it and threading it out
+     * here beats reaching for a side channel keyed on the request.
+     */
+    const handle = async (
+      req: Request,
+    ): Promise<{
+      result: Response | { openapi: OpenApiContribution }
+      route: IndexedRoute | undefined
+    }> => {
+      const respond = async (rejection: OpenApiRejection) => ({
+        result:
+          (await config.reject?.(rejection, req)) ??
+          defaultRejectionResponse(rejection),
+        route: undefined,
+      })
 
       if (config.skip?.(req) === true) {
-        return unmatched(document, 'skipped', req.method, undefined)
+        return {
+          result: unmatched(document, 'skipped', req.method, undefined),
+          route: undefined,
+        }
       }
 
       const url = new URL(req.url)
@@ -325,20 +352,26 @@ export const withOpenApi: Middleware<
       if (reference !== undefined && (method === 'get' || method === 'head')) {
         const head = method === 'head'
         if (url.pathname === reference.path) {
-          return new Response(head ? null : reference.render(), {
-            headers: {
-              'content-type': 'text/html; charset=utf-8',
-              'cache-control': reference.cacheControl,
-            },
-          })
+          return {
+            result: new Response(head ? null : reference.render(), {
+              headers: {
+                'content-type': 'text/html; charset=utf-8',
+                'cache-control': reference.cacheControl,
+              },
+            }),
+            route: undefined,
+          }
         }
         if (url.pathname === reference.documentPath) {
-          return new Response(head ? null : documentJson, {
-            headers: {
-              'content-type': 'application/json; charset=utf-8',
-              'cache-control': reference.cacheControl,
-            },
-          })
+          return {
+            result: new Response(head ? null : documentJson, {
+              headers: {
+                'content-type': 'application/json; charset=utf-8',
+                'cache-control': reference.cacheControl,
+              },
+            }),
+            route: undefined,
+          }
         }
       }
 
@@ -347,7 +380,10 @@ export const withOpenApi: Middleware<
 
       if (match === undefined) {
         if (onUnknownRoute === 'pass') {
-          return unmatched(document, 'no_route', req.method, undefined)
+          return {
+            result: unmatched(document, 'no_route', req.method, undefined),
+            route: undefined,
+          }
         }
         return respond({
           kind: 'route_not_found',
@@ -358,18 +394,30 @@ export const withOpenApi: Middleware<
         })
       }
 
+      // Answered here, before the operation lookup, because a preflight is an
+      // `OPTIONS` that almost no document declares an operation for — the
+      // lookup below would call it a 405 and the browser would report an
+      // opaque CORS failure. The route is all a preflight needs: its declared
+      // methods *are* `Access-Control-Allow-Methods`.
+      if (cors !== undefined && cors.isPreflight(req)) {
+        return { result: cors.preflight(req, match.route), route: match.route }
+      }
+
       const operation = isHttpMethod(method)
         ? match.route.operations.get(method)
         : undefined
 
       if (operation === undefined) {
         if (onUnknownMethod === 'pass') {
-          return unmatched(
-            document,
-            'no_operation',
-            req.method,
-            match.route.template,
-          )
+          return {
+            result: unmatched(
+              document,
+              'no_operation',
+              req.method,
+              match.route.template,
+            ),
+            route: match.route,
+          }
         }
         return respond({
           kind: 'method_not_allowed',
@@ -417,8 +465,9 @@ export const withOpenApi: Middleware<
             operation.knownQueryPrefixes.some((prefix) =>
               name.startsWith(prefix),
             )
-          )
+          ) {
             continue
+          }
           violations.push({
             in: 'query',
             name,
@@ -500,20 +549,43 @@ export const withOpenApi: Middleware<
 
       // Contribute: fall through with the matched operation on `ctx.openapi`.
       return {
-        openapi: {
-          matched: true,
-          document,
-          route: operation.route,
-          method: operation.method,
-          operation: operation.operation,
-          operationId: operation.operationId,
-          security: operation.security,
-          params,
-          body,
-          mediaType,
-          validated: options !== undefined,
+        result: {
+          openapi: {
+            matched: true,
+            document,
+            route: operation.route,
+            method: operation.method,
+            operation: operation.operation,
+            operationId: operation.operationId,
+            security: operation.security,
+            params,
+            body,
+            mediaType,
+            validated: options !== undefined,
+          },
         },
+        route: match.route,
       }
+    }
+
+    // Plain request-side middleware unless CORS is on. The response seam exists
+    // here only to stamp headers on the way out, and rule 5 says not to open it
+    // for anything a request-side pass can already do.
+    if (cors === undefined) {
+      return async (req: Request) => (await handle(req)).result
+    }
+
+    return async function* (req: Request) {
+      const { result, route } = await handle(req)
+
+      // A rejection of ours is still a response a browser has to be allowed to
+      // read — an unstamped 400 surfaces as an opaque CORS error instead of the
+      // violations it carries. Returning here short-circuits: nothing runs
+      // downstream, so there is no response phase to reach.
+      if (result instanceof Response) return cors.stamp(result, req, route)
+
+      const response = yield result
+      return cors.stamp(response, req, route)
     }
   },
 })

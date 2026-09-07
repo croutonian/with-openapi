@@ -252,27 +252,72 @@ is pure cost. `required` is enforced for both.
 Reading the body here does not consume it. The framework hands every layer a
 buffered request, so the handler can still call `req.json()`.
 
+## CORS
+
+An OpenAPI document already knows most of a CORS policy. `cors` derives it,
+per route:
+
+```ts
+withOpenApi({
+  document,
+  cors: { origin: ['https://app.example.com'], credentials: true },
+})
+```
+
+| Header                          | Derived from                                                                                                                |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `Access-Control-Allow-Methods`  | the operations the matched path declares                                                                                    |
+| `Access-Control-Allow-Headers`  | its `in: header` parameters, `Content-Type` where it takes a body, and the header its security schemes carry credentials in |
+| `Access-Control-Expose-Headers` | its Response Objects' `headers`, minus the browser safelist                                                                 |
+
+So for a path declaring only `get` and `delete`:
+
+```
+preflight PUT /users/{id}  → 204, Allow-Methods: GET, DELETE
+```
+
+A hand-maintained list would advertise `PUT` and let the request through to a
+`405`. This one does not, because it is reading the same document the `405`
+comes from.
+
+Three things worth knowing:
+
+- **`origin` is required and never derived.** A document says where an API
+  lives, not who may call it — `servers` is not an allowlist, and treating it
+  as one would be a security decision made from the wrong data. Same for
+  `credentials`.
+- **Rejections are stamped too.** An unstamped `400` reaches a browser as an
+  opaque CORS error rather than the violations it is carrying.
+- **The document is the source of truth for headers.** A request header the API
+  reads but the document does not declare will be refused by the browser. That
+  is usually the document being wrong; `allowedHeaders` is the escape hatch
+  when it genuinely is not.
+
+Preflights are answered after the route match but before the method lookup —
+otherwise the `OPTIONS` no document declares an operation for would come back
+`405`. A plain `OPTIONS` with no `Access-Control-Request-Method` is not a
+preflight and is still handled normally.
+
+With `cors` unset the middleware is purely request-side and touches no response
+headers at all.
+
 ## Composing
 
 `withOpenApi` contributes one key and declares no prerequisites, so it goes
-anywhere in a `pipeline` array. Two orderings are worth knowing:
+anywhere in a `pipeline` array. Put authentication after it, so it can read the
+security requirements the document declares for the matched operation:
 
 ```ts
 pipeline(
   [
-    // CORS first. A preflight `OPTIONS` is rarely declared in a document, and
-    // `withCors` answers it before `withOpenApi` can call it a 405.
-    withCors({ origin: ['https://app.example.com'] }),
-    withOpenApi({ document }),
-    // Auth after, so it can read `ctx.openapi.security` and act on it.
+    withOpenApi({ document, cors: { origin: ['https://app.example.com'] } }),
+    // `ctx.openapi.security` is the operation's requirement, falling back to
+    // the document's. This middleware never enforces it — that is auth's job.
     withAuth(),
   ],
   handler,
 )
 ```
-
-If you would rather keep CORS behind the middleware, `skip: (req) => req.method
-=== 'OPTIONS'` leaves preflight alone.
 
 ## Limits
 

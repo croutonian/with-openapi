@@ -49,6 +49,14 @@ const _p4 = withOpenApi(
     onUnknownRoute: 'pass',
     onUnknownMethod: 'pass',
     reference: { path: '/docs', configuration: { darkMode: true } },
+    cors: {
+      origin: (origin) => origin?.endsWith('.example.com') === true,
+      credentials: true,
+      maxAge: 600,
+      allowedHeaders: ['X-Tenant'],
+      exposedHeaders: ['X-Request-Id'],
+      optionsSuccessStatus: 200,
+    },
     schemaDraft: '2020-12',
     skip: (req) => req.method === 'OPTIONS',
     reject: (rejection) =>

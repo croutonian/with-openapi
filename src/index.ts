@@ -15,6 +15,8 @@
 
 export { withOpenApi } from './with-openapi.js'
 
+export type { CorsOrigin, CorsPolicy, OpenApiCorsOptions } from './cors.js'
+
 export { SCALAR_CDN_URL } from './reference.js'
 export type { ScalarHtmlInput, ScalarReferenceOptions } from './reference.js'
 

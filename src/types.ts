@@ -9,6 +9,7 @@ import type {
   SecurityRequirementObject,
 } from 'openapi3-ts/oas31'
 
+import type { OpenApiCorsOptions } from './cors.js'
 import type { HttpMethod } from './document.js'
 import type { ScalarReferenceOptions } from './reference.js'
 import type { SchemaDraft } from './schema.js'
@@ -164,6 +165,23 @@ export interface WithOpenApiConfig {
    * @defaultValue off
    */
   reference?: boolean | ScalarReferenceOptions
+
+  /**
+   * Answer CORS preflights and stamp `Access-Control-*` headers, with the
+   * policy derived from the document: a path's declared operations are its
+   * allowed methods, its `in: header` parameters and security schemes are its
+   * allowed request headers, its Response Objects' `headers` are what it
+   * exposes.
+   *
+   * `origin` is the one field that is never derived and so is required — a
+   * document says where an API lives, not who may call it.
+   *
+   * Rejections are stamped too. An unstamped `400` reaches a browser as an
+   * opaque CORS error rather than the violations it is carrying.
+   *
+   * @defaultValue off
+   */
+  cors?: OpenApiCorsOptions
 
   /**
    * JSON Schema draft the document's schemas are written against. Inferred
