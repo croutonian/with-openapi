@@ -432,9 +432,27 @@ bun scripts/smoke.mjs
 
 Conventional commits on `main` keep a
 [release-please](https://github.com/googleapis/release-please) PR open. Merging
-it tags a release, which publishes to npm and JSR. Both authenticate with the
-workflow's OIDC token, so there are no publish secrets in the repository — the
-one-time setup is a trusted publisher on npm and a linked repository on JSR.
+it tags a release, which publishes to npm and JSR.
+
+### One-time setup
+
+|                                                                                                                      | Why                                                                                                                                                                                                                                    |
+| -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A **GitHub App** with Contents and Pull requests write, installed on the repo, as `GH_APP_ID` + `GH_APP_PRIVATE_KEY` | release-please has to open a PR, and this org does not let GitHub Actions do that. An App is not GitHub Actions, so the policy does not cover it — and unlike `GITHUB_TOKEN`, its pushes trigger workflows, so the release PR gets CI. |
+| The **pkg.pr.new App** installed on the repo                                                                         | Branch previews. Without it the preview job warns and skips rather than failing.                                                                                                                                                       |
+| An **npm trusted publisher** for `@croutonian/with-openapi`                                                          | Publishing without a stored credential.                                                                                                                                                                                                |
+| The **JSR package** linked to this repository                                                                        | Same, on the JSR side.                                                                                                                                                                                                                 |
+
+Steps are in the comments at the top of
+[`release.yml`](./.github/workflows/release.yml).
+
+### The first publish
+
+Trusted publishing is configured against a package that already exists, so the
+very first release of a new name has nothing to configure it on. Set an
+`NPM_TOKEN` secret, ship `0.1.0`, add the trusted publisher on npmjs.com, then
+**delete the secret** — with it gone the workflow falls back to OIDC and the
+repository holds no publish credential at all.
 
 Between releases, every branch push and pull request publishes an installable
 preview to [pkg.pr.new](https://pkg.pr.new):
