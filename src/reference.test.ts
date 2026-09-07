@@ -101,6 +101,47 @@ describe('the Scalar reference endpoint', () => {
     expect((await app(get('/api/reference'))).status).toBe(404)
   })
 
+  // The path this middleware matches and the URL a browser can reach are the
+  // same string only when nothing rewrites the path in front of it. Behind a
+  // gateway that strips a prefix they differ, and no single `documentPath`
+  // satisfies both: one spelling never serves the JSON, the other renders a
+  // page that then reports it could not load the document.
+  it('can advertise a document URL that is not the path it serves it at', async () => {
+    const app = handler({
+      basePath: '/api',
+      reference: {
+        path: '/api/reference',
+        documentPath: '/api/openapi.json',
+        documentUrl: '/functions/v1/api/openapi.json',
+      },
+    })
+
+    const html = await (await app(get('/api/reference'))).text()
+    expect(html).toContain('"url":"/functions/v1/api/openapi.json"')
+    expect(html).not.toContain('"url":"/api/openapi.json"')
+
+    // Still served where it says, not where it points.
+    expect((await app(get('/api/openapi.json'))).status).toBe(200)
+    expect((await app(get('/functions/v1/api/openapi.json'))).status).toBe(404)
+  })
+
+  it('defaults the advertised URL to the path it serves the document at', async () => {
+    const html = await (await handler()(get('/reference'))).text()
+    expect(html).toContain('"url":"/reference/openapi.json"')
+  })
+
+  it('gives a custom page both spellings', async () => {
+    const app = handler({
+      reference: {
+        documentUrl: '/public/openapi.json',
+        html: (input) => `${input.documentPath} -> ${input.documentUrl}`,
+      },
+    })
+    expect(await (await app(get('/reference'))).text()).toBe(
+      '/reference/openapi.json -> /public/openapi.json',
+    )
+  })
+
   it('rejects a reference path that is not absolute', () => {
     expect(() =>
       withOpenApi(

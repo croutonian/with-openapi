@@ -238,11 +238,37 @@ entirely:
 
 ```ts
 reference: {
-  html: ({ documentPath }) => myOwnPage(documentPath)
+  html: ({ documentPath, documentUrl }) => myOwnPage(documentUrl)
 }
 ```
 
 The reference paths are absolute — they are **not** relative to `basePath`.
+
+### Behind a gateway that rewrites the path
+
+`documentPath` is matched against the pathname this middleware is handed.
+`documentUrl` is what the page tells the browser to fetch. They default to the
+same string, which is right until something rewrites the path in front of you —
+and then no single value works: one spelling never serves the JSON, the other
+renders a page that loads and immediately reports that it could not load the
+document.
+
+Supabase Edge Functions is that case by default. The platform routes on
+`/functions/v1/<fn>/...`, strips `/functions/v1`, and hands the worker
+`/<fn>/...`:
+
+```ts
+withOpenApi({
+  document,
+  // What the worker sees — not the public URL, and not `servers[0].url`.
+  basePath: '/api',
+  reference: {
+    path: '/api/reference',
+    documentPath: '/api/openapi.json', // where this middleware serves it
+    documentUrl: '/functions/v1/api/openapi.json', // where a browser fetches it
+  },
+})
+```
 
 ## Parameters
 
