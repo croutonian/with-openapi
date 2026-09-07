@@ -2,3 +2,11 @@ dist
 node_modules
 pnpm-lock.yaml
 package-lock.json
+
+# Written by release-please, which formats them its own way. CHANGELOG.md is
+# generated wholesale, and jsr.json is reserialized on every version bump —
+# it expands short arrays onto separate lines where prettier collapses them.
+# Checking either just fails the release PR for a disagreement between two
+# tools, neither of which is wrong.
+CHANGELOG.md
+jsr.json
