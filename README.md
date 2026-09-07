@@ -1,7 +1,7 @@
-# `@johnstonmatt/with-openapi`
+# `@croutonian/with-openapi`
 
-[![npm](https://img.shields.io/npm/v/@johnstonmatt/with-openapi)](https://www.npmjs.com/package/@johnstonmatt/with-openapi)
-[![JSR](https://jsr.io/badges/@johnstonmatt/with-openapi)](https://jsr.io/@johnstonmatt/with-openapi)
+[![npm](https://img.shields.io/npm/v/@croutonian/with-openapi)](https://www.npmjs.com/package/@croutonian/with-openapi)
+[![JSR](https://jsr.io/badges/@croutonian/with-openapi)](https://jsr.io/@croutonian/with-openapi)
 [![pkg.pr.new](https://pkg.pr.new/badge/johnstonmatt/with-openapi)](https://pkg.pr.new/~/johnstonmatt/with-openapi)
 [![CI](https://github.com/johnstonmatt/with-openapi/actions/workflows/ci.yml/badge.svg)](https://github.com/johnstonmatt/with-openapi/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
@@ -16,7 +16,7 @@ document — so what you enforce and what you document cannot drift.
 
 ```ts
 import { pipeline } from '@supabase/middleware'
-import { withOpenApi } from '@johnstonmatt/with-openapi'
+import { withOpenApi } from '@croutonian/with-openapi'
 import document from './openapi.json' with { type: 'json' }
 
 export default {
@@ -40,20 +40,20 @@ matched operation on `ctx`.
 ## Install
 
 ```sh
-npm install @johnstonmatt/with-openapi
-pnpm add @johnstonmatt/with-openapi
+npm install @croutonian/with-openapi
+pnpm add @croutonian/with-openapi
 ```
 
-Also on [JSR](https://jsr.io/@johnstonmatt/with-openapi), which serves the
+Also on [JSR](https://jsr.io/@croutonian/with-openapi), which serves the
 TypeScript source rather than a build:
 
 ```sh
-deno add jsr:@johnstonmatt/with-openapi
+deno add jsr:@croutonian/with-openapi
 ```
 
 ```ts
 // Supabase Edge Functions — no install
-import { withOpenApi } from 'npm:@johnstonmatt/with-openapi'
+import { withOpenApi } from 'npm:@croutonian/with-openapi'
 ```
 
 Requires TypeScript 5.4 or newer to typecheck against the shipped `.d.ts`, and
@@ -355,7 +355,14 @@ Between releases, every branch push and pull request publishes an installable
 preview to [pkg.pr.new](https://pkg.pr.new):
 
 ```sh
-npm i https://pkg.pr.new/johnstonmatt/with-openapi@<sha>
+npm i https://pkg.pr.new/@croutonian/with-openapi@<sha-or-pr-number>
+```
+
+That compact form needs the package to already be on npm with a `repository`
+field. Before the first release, use the long form, which always resolves:
+
+```sh
+npm i https://pkg.pr.new/johnstonmatt/with-openapi/@croutonian/with-openapi@<sha>
 ```
 
 Previews are npm-side only. pkg.pr.new serves npm-compatible tarballs, and

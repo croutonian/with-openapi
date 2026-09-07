@@ -230,7 +230,7 @@ function collectParameters(
  * @example Reject anything the document does not describe, and serve the docs.
  * ```ts
  * import { pipeline } from '@supabase/middleware'
- * import { withOpenApi } from '@johnstonmatt/with-openapi'
+ * import { withOpenApi } from '@croutonian/with-openapi'
  * import document from './openapi.json' with { type: 'json' }
  *
  * export default {

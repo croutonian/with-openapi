@@ -1,5 +1,5 @@
 /**
- * `@johnstonmatt/with-openapi` — hold an API to its own description.
+ * `@croutonian/with-openapi` — hold an API to its own description.
  *
  * One middleware, {@link withOpenApi}, doing three separable things:
  *

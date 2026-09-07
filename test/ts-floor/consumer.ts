@@ -1,7 +1,7 @@
 // Compiled against the *built* `.d.ts` with the floor version of tsc, so the
 // `typescript >= 5.4` peer dependency stays honest.
 
-import { withOpenApi } from '@johnstonmatt/with-openapi'
+import { withOpenApi } from '@croutonian/with-openapi'
 import type { OpenAPIObject } from 'openapi3-ts/oas31'
 
 const document: OpenAPIObject = {

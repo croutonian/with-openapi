@@ -4,9 +4,9 @@
 #
 # Both registries authenticate with the workflow's OIDC token — no long-lived
 # secrets. One-time setup:
-#   npm — https://npmjs.com/package/@johnstonmatt/with-openapi/access, add a
+#   npm — https://npmjs.com/package/@croutonian/with-openapi/access, add a
 #         trusted publisher for this repository and workflow file.
-#   JSR — https://jsr.io/@johnstonmatt/with-openapi/settings, link the GitHub
+#   JSR — https://jsr.io/@croutonian/with-openapi/settings, link the GitHub
 #         repository.
 name: Release
 
@@ -94,7 +94,7 @@ jobs:
           # registry error, rather than swallowing both.
           STDERR=$(mktemp)
           STATUS=0
-          EXISTING=$(npm view "@johnstonmatt/with-openapi@$VERSION" version 2>"$STDERR") || STATUS=$?
+          EXISTING=$(npm view "@croutonian/with-openapi@$VERSION" version 2>"$STDERR") || STATUS=$?
           if [ -n "$EXISTING" ]; then
             echo "Version $VERSION already on npm, skipping."
             exit 0

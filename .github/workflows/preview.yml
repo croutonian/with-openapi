@@ -2,7 +2,12 @@
 # installable preview of the package to pkg.pr.new, so a change can be tried
 # from a real install before it is released:
 #
-#   npm i https://pkg.pr.new/johnstonmatt/with-openapi@<sha>
+#   npm i https://pkg.pr.new/@croutonian/with-openapi@<sha>
+#
+# That compact form needs the package to be on npm already; until the first
+# release, the long form is the one that resolves:
+#
+#   npm i https://pkg.pr.new/johnstonmatt/with-openapi/@croutonian/with-openapi@<sha>
 #
 # Requires the pkg.pr.new GitHub App to be installed on the repository:
 # https://github.com/apps/pkg-pr-new
