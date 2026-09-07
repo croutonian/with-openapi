@@ -204,6 +204,31 @@ todo() { printf '  %s·%s %s\n' "$DIM" "$RESET" "$1"; }
 
 have_secret() { gh secret list --json name --jq '.[].name' 2>/dev/null | grep -qx "$1"; }
 
+# installed_apps — slugs of the GitHub Apps installed on the owner. Needs
+# admin:org for an organization. Fails rather than printing nothing when it
+# cannot tell, because "I cannot see" and "nothing is installed" must not
+# collapse into the same answer.
+installed_apps() {
+  if [[ "${OWNER_TYPE:-User}" == "Organization" ]]; then
+    gh api "/orgs/$OWNER/installations" --jq '.installations[].app_slug' 2>/dev/null
+  else
+    gh api "/user/installations" --jq '.installations[].app_slug' 2>/dev/null
+  fi
+}
+
+# app_state SLUG — installed | absent | unknown
+app_state() {
+  local list
+  if ! list="$(installed_apps)"; then printf 'unknown'; return; fi
+  if grep -qx "$1" <<<"$list"; then printf 'installed'; else printf 'absent'; fi
+}
+
+# confirm_app_installed SLUG LABEL — the fallback when the API cannot answer.
+confirm_app_installed() {
+  step "App settings → 'Install App' → $OWNER → 'Only select repositories' → $REPO"
+  confirm "Is $2 installed on $REPO?" || SKIPPED+=("install $2 on $REPO")
+}
+
 # npm_pkg_exists — whether the package name is on the registry yet. Decides
 # whether a trusted publisher can be configured at all.
 npm_pkg_exists() {
@@ -272,7 +297,11 @@ printf '\n'
 say "Current state:"
 have_secret GH_APP_ID && have_secret GH_APP_PRIVATE_KEY \
   && ok "release App secrets present" || todo "release App not configured (stage 2)"
-todo "pkg.pr.new install cannot be read from here — stage 3 can test it"
+case "$(app_state pkg-pr-new)" in
+  installed) ok "pkg.pr.new App installed" ;;
+  absent)    todo "pkg.pr.new App not installed (stage 3)" ;;
+  *)         todo "pkg.pr.new App — cannot tell without the admin:org scope" ;;
+esac
 if npm_pkg_exists; then
   ok "$NPM_PKG exists on npm — a trusted publisher can be configured"
 else
@@ -335,12 +364,35 @@ if [[ "$APP_STAGE" == "yes" ]]; then
   fi
 
   printf '\n'
-  step "Last thing — install the App, on the page you are already on:"
+  step "Now install it, from the page you are already on:"
   step "  left sidebar → 'Install App' → $OWNER → 'Install'"
   step "  → 'Only select repositories' → $REPO"
   note "  Creating an App does not install it; this step is easy to miss."
   pause "Press Enter once the App is installed."
 fi
+
+# Installation is independent of credentials: an App can exist, have its ID and
+# key sitting in secrets, and still not be installed on the repository — which
+# is the actual blocker. So this is checked on every run, not only on the run
+# that enters the keys.
+printf '\n'
+RELEASE_APP="${OWNER}-release-bot"
+case "$(app_state "$RELEASE_APP")" in
+  installed)
+    ok "the App '$RELEASE_APP' is installed on $OWNER"
+    ;;
+  absent)
+    warn "No App called '$RELEASE_APP' is installed on $OWNER."
+    say "Installed right now:"
+    installed_apps | sed 's/^/      /' || true
+    note "  If yours is listed above under a different name, that is fine."
+    confirm_app_installed "$RELEASE_APP" "the release App"
+    ;;
+  *)
+    note "Cannot list installed Apps here (needs the admin:org scope)."
+    confirm_app_installed "$RELEASE_APP" "the release App"
+    ;;
+esac
 
 # ── 3 ─────────────────────────────────────────────────────────────────────
 stage "pkg.pr.new — branch preview builds"
@@ -348,13 +400,24 @@ stage "pkg.pr.new — branch preview builds"
 say "Every branch push publishes an installable preview of the package."
 say "Without the App the preview job warns and skips; nothing else breaks."
 printf '\n'
-open_url "https://github.com/apps/pkg-pr-new"
-step "Click 'Install' (or 'Configure' if it is already installed elsewhere)."
-step "Choose $OWNER, then 'Only select repositories' → $REPO."
-pause "Press Enter once that is done."
+
+PKG_APP_STATE="$(app_state pkg-pr-new)"
+if [[ "$PKG_APP_STATE" == "installed" ]]; then
+  ok "pkg.pr.new is installed on $OWNER"
+  note "  Per-repository selection is not readable here, so if previews still"
+  note "  fail, check that $REPO is among the selected repositories."
+else
+  [[ "$PKG_APP_STATE" == "absent" ]] \
+    && todo "pkg.pr.new is not installed on $OWNER" \
+    || note "Cannot list installed Apps here (needs the admin:org scope)."
+  open_url "https://github.com/apps/pkg-pr-new"
+  step "Click 'Install' (or 'Configure' if it is installed elsewhere already)."
+  step "Choose $OWNER, then 'Only select repositories' → $REPO."
+  pause "Press Enter once that is done."
+fi
 
 printf '\n'
-if confirm "Re-run the last preview build to check it works? (~1 min)"; then
+if confirm "Re-run the last preview build to check it end to end? (~1 min)"; then
   PREVIEW_RUN="$(gh run list --workflow=preview.yml --limit 1 --json databaseId --jq '.[0].databaseId' 2>/dev/null || true)"
   if [[ -n "$PREVIEW_RUN" ]]; then
     gh run rerun "$PREVIEW_RUN" >/dev/null 2>&1 || warn "could not re-run $PREVIEW_RUN"
