@@ -1,0 +1,13 @@
+{
+  "name": "ts-floor-fixture",
+  "private": true,
+  "type": "module",
+  "description": "Not part of the workspace — it pins its own tsc at the declared floor.",
+  "dependencies": {
+    "@johnstonmatt/with-openapi": "file:../..",
+    "openapi3-ts": "^4.6.1"
+  },
+  "devDependencies": {
+    "typescript": "5.4.2"
+  }
+}

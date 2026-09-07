@@ -1,0 +1,70 @@
+{
+  "name": "@johnstonmatt/with-openapi",
+  "version": "0.1.0",
+  "description": "OpenAPI middleware for @supabase/middleware. Matches each request against an OpenAPI 3.1 document, optionally rejects the ones it does not describe, contributes the matched operation and validated params to ctx, and optionally serves a Scalar API reference.",
+  "keywords": [
+    "openapi",
+    "openapi3",
+    "scalar",
+    "middleware",
+    "fetch",
+    "edge",
+    "supabase",
+    "validation"
+  ],
+  "homepage": "https://github.com/johnstonmatt/with-openapi#readme",
+  "bugs": {
+    "url": "https://github.com/johnstonmatt/with-openapi/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/johnstonmatt/with-openapi.git"
+  },
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "smoke": "node scripts/smoke.mjs",
+    "prepare": "tsdown",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "typecheck:negative": "node scripts/check-negative-types.mjs",
+    "typecheck:consumer": "npm --prefix test/ts-floor install --no-package-lock && npm --prefix test/ts-floor exec -- tsc --noEmit",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "dependencies": {
+    "@cfworker/json-schema": "^4.1.1",
+    "@supabase/middleware": "^0.5.0",
+    "openapi3-ts": "^4.6.1"
+  },
+  "devDependencies": {
+    "prettier": "^3.8.1",
+    "tsdown": "^0.20.3",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  },
+  "peerDependencies": {
+    "typescript": ">=5.4"
+  },
+  "peerDependenciesMeta": {
+    "typescript": {
+      "optional": true
+    }
+  }
+}
