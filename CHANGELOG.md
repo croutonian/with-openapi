@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.3.0](https://github.com/croutonian/with-openapi/compare/with-openapi-v0.2.0...with-openapi-v0.3.0) (2026-09-07)
+
+
+### ⚠ BREAKING CHANGES
+
+* **reference:** with a basePath set, the reference page and the document move under it, and the document no longer nests under the page. Anyone relying on the old locations should set `path` and `documentPath` explicitly; both are still taken literally when given.
+
+### Features
+
+* **reference:** let the advertised document URL differ from the served path ([5f27c5e](https://github.com/croutonian/with-openapi/commit/5f27c5e413fe60c8be08a64ada7e88ea21304a61))
+* **rejections:** say whether a 404 missed basePath or the document ([80e3eff](https://github.com/croutonian/with-openapi/commit/80e3eff7ac86da841fa1f80b9224b44de4c2e7ce))
+
+
+### Bug Fixes
+
+* **reference:** derive the reference defaults from basePath ([12a6238](https://github.com/croutonian/with-openapi/commit/12a62386e5bd2358972c4c3166804682a65f2709))
+* wizard read a five-minute-old answer about whether npm had the package ([d277320](https://github.com/croutonian/with-openapi/commit/d277320ccfe55ed289a79e9858dee94417f8344d))
+
 ## [0.2.0](https://github.com/croutonian/with-openapi/compare/with-openapi-v0.1.0...with-openapi-v0.2.0) (2026-09-07)
 
 
