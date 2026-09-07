@@ -2,8 +2,8 @@
 
 [![npm](https://img.shields.io/npm/v/@croutonian/with-openapi)](https://www.npmjs.com/package/@croutonian/with-openapi)
 [![JSR](https://jsr.io/badges/@croutonian/with-openapi)](https://jsr.io/@croutonian/with-openapi)
-[![pkg.pr.new](https://pkg.pr.new/badge/johnstonmatt/with-openapi)](https://pkg.pr.new/~/johnstonmatt/with-openapi)
-[![CI](https://github.com/johnstonmatt/with-openapi/actions/workflows/ci.yml/badge.svg)](https://github.com/johnstonmatt/with-openapi/actions/workflows/ci.yml)
+[![pkg.pr.new](https://pkg.pr.new/badge/croutonian/with-openapi)](https://pkg.pr.new/~/croutonian/with-openapi)
+[![CI](https://github.com/croutonian/with-openapi/actions/workflows/ci.yml/badge.svg)](https://github.com/croutonian/with-openapi/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 OpenAPI middleware for [`@supabase/middleware`](https://github.com/supabase/middleware).
@@ -447,7 +447,7 @@ That compact form needs the package to already be on npm with a `repository`
 field. Before the first release, use the long form, which always resolves:
 
 ```sh
-npm i https://pkg.pr.new/johnstonmatt/with-openapi/@croutonian/with-openapi@<sha>
+npm i https://pkg.pr.new/croutonian/with-openapi/@croutonian/with-openapi@<sha>
 ```
 
 Previews are npm-side only. pkg.pr.new serves npm-compatible tarballs, and

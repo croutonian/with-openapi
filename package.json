@@ -12,13 +12,13 @@
     "supabase",
     "validation"
   ],
-  "homepage": "https://github.com/johnstonmatt/with-openapi#readme",
+  "homepage": "https://github.com/croutonian/with-openapi#readme",
   "bugs": {
-    "url": "https://github.com/johnstonmatt/with-openapi/issues"
+    "url": "https://github.com/croutonian/with-openapi/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/johnstonmatt/with-openapi.git"
+    "url": "git+https://github.com/croutonian/with-openapi.git"
   },
   "license": "MIT",
   "type": "module",
