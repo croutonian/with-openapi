@@ -38,13 +38,17 @@
   },
   "scripts": {
     "build": "tsdown",
-    "smoke": "node scripts/smoke.mjs",
     "prepare": "tsdown",
+    "dev": "tsdown --watch",
+    "smoke": "node scripts/smoke.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "typecheck:negative": "node scripts/check-negative-types.mjs",
-    "typecheck:consumer": "npm --prefix test/ts-floor install --no-package-lock && npm --prefix test/ts-floor exec -- tsc --noEmit",
+    "typecheck:min": "pnpm --dir test/ts-floor install --ignore-workspace && pnpm --dir test/ts-floor exec tsc --noEmit --project ../../tsconfig.json",
+    "typecheck:consumer": "pnpm --dir test/ts-floor install --ignore-workspace && pnpm --dir test/ts-floor exec tsc --noEmit",
+    "check-exports": "attw --pack . --profile esm-only",
+    "check-jsr": "pnpm dlx jsr@0.14.3 publish --dry-run --allow-dirty",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },
@@ -54,6 +58,7 @@
     "openapi3-ts": "^4.6.1"
   },
   "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.4",
     "prettier": "^3.8.1",
     "tsdown": "^0.20.3",
     "typescript": "^5.9.3",
@@ -66,5 +71,6 @@
     "typescript": {
       "optional": true
     }
-  }
+  },
+  "packageManager": "pnpm@11.13.1+sha512.b2fc7683b8a6525414e7d13e1ba28caaddde96bf66ec540bfaeb7e702b81f3e0be4d1f295edf7f9fe0396740a8dce4509c582ddf79891f4543fea32d37645f25"
 }

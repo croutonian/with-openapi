@@ -1,0 +1,114 @@
+# release-please watches conventional commits on main and keeps a release PR
+# open. Merging that PR tags a release, which is what publishes to npm and JSR.
+# Previews between releases come from pkg.pr.new (see preview.yml).
+#
+# Both registries authenticate with the workflow's OIDC token — no long-lived
+# secrets. One-time setup:
+#   npm — https://npmjs.com/package/@johnstonmatt/with-openapi/access, add a
+#         trusted publisher for this repository and workflow file.
+#   JSR — https://jsr.io/@johnstonmatt/with-openapi/settings, link the GitHub
+#         repository.
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write # tags and GitHub releases
+  pull-requests: write # the release PR
+  id-token: write # OIDC, for npm and JSR trusted publishing
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      # Runs on every push to main. It opens or updates the release PR, and
+      # sets `release_created` only on the push that merges one.
+      #
+      # This uses the default GITHUB_TOKEN, which means the release PR does not
+      # itself trigger CI — GitHub suppresses workflow events from that token to
+      # prevent loops. The PR only touches CHANGELOG.md and version fields, so
+      # that is a fair trade; swap in actions/create-github-app-token if you
+      # want CI on it.
+      - name: Run release-please
+        uses: googleapis/release-please-action@16a9c90856f42705d54a6fda1823352bdc62cf38 # v4.4.0
+        id: release
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        if: ${{ steps.release.outputs.release_created }}
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d # v6.0.5
+        if: ${{ steps.release.outputs.release_created }}
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        if: ${{ steps.release.outputs.release_created }}
+        with:
+          node-version: 22
+          cache: 'pnpm'
+          registry-url: 'https://registry.npmjs.org'
+
+      # OIDC trusted publishing needs npm 11.5.1 or newer; the npm bundled with
+      # Node 22 is older. Installed into a user-writable prefix to avoid sudo.
+      - name: Install latest npm
+        if: ${{ steps.release.outputs.release_created }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.npm-global"
+          npm config set prefix "$HOME/.npm-global"
+          echo "$HOME/.npm-global/bin" >> "$GITHUB_PATH"
+          npm install -g npm@latest
+
+      - name: Install dependencies
+        if: ${{ steps.release.outputs.release_created }}
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        if: ${{ steps.release.outputs.release_created }}
+        run: pnpm build
+
+      - name: Publish to npm
+        if: ${{ steps.release.outputs.release_created }}
+        env:
+          # Assembled from the numeric outputs rather than `tag_name`, whose
+          # shape depends on the release-please package configuration.
+          VERSION: ${{ steps.release.outputs.major }}.${{ steps.release.outputs.minor }}.${{ steps.release.outputs.patch }}
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Unexpected version from release-please: $VERSION"
+            exit 1
+          fi
+
+          # Idempotency guard, so a re-run of a partially failed release does
+          # not fail on the npm side. Distinguish "already published" from a
+          # registry error, rather than swallowing both.
+          STDERR=$(mktemp)
+          STATUS=0
+          EXISTING=$(npm view "@johnstonmatt/with-openapi@$VERSION" version 2>"$STDERR") || STATUS=$?
+          if [ -n "$EXISTING" ]; then
+            echo "Version $VERSION already on npm, skipping."
+            exit 0
+          elif [ "$STATUS" -ne 0 ] && ! grep -qiE 'E404|not found' "$STDERR"; then
+            cat "$STDERR"
+            exit 1
+          fi
+
+          npm publish --access public --provenance
+
+      # JSR has no pre-release channel, so it only ever sees real releases.
+      # Runs after npm and does not fail the job: a JSR-side problem should
+      # never mask or roll back an npm release that already succeeded.
+      - name: Publish to JSR
+        if: ${{ steps.release.outputs.release_created }}
+        continue-on-error: true
+        run: npx jsr@0.14.3 publish

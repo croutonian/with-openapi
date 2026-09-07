@@ -1,5 +1,11 @@
 # `@johnstonmatt/with-openapi`
 
+[![npm](https://img.shields.io/npm/v/@johnstonmatt/with-openapi)](https://www.npmjs.com/package/@johnstonmatt/with-openapi)
+[![JSR](https://jsr.io/badges/@johnstonmatt/with-openapi)](https://jsr.io/@johnstonmatt/with-openapi)
+[![pkg.pr.new](https://pkg.pr.new/badge/johnstonmatt/with-openapi)](https://pkg.pr.new/~/johnstonmatt/with-openapi)
+[![CI](https://github.com/johnstonmatt/with-openapi/actions/workflows/ci.yml/badge.svg)](https://github.com/johnstonmatt/with-openapi/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+
 OpenAPI middleware for [`@supabase/middleware`](https://github.com/supabase/middleware).
 
 An OpenAPI document already says what your API accepts. This makes it say it at
@@ -35,10 +41,18 @@ matched operation on `ctx`.
 
 ```sh
 npm install @johnstonmatt/with-openapi
+pnpm add @johnstonmatt/with-openapi
+```
+
+Also on [JSR](https://jsr.io/@johnstonmatt/with-openapi), which serves the
+TypeScript source rather than a build:
+
+```sh
+deno add jsr:@johnstonmatt/with-openapi
 ```
 
 ```ts
-// Deno / Supabase Edge Functions — no install
+// Supabase Edge Functions — no install
 import { withOpenApi } from 'npm:@johnstonmatt/with-openapi'
 ```
 
@@ -302,13 +316,22 @@ Scalar is **not** a dependency; the reference page loads it from a CDN.
 ## Development
 
 ```sh
-npm install
-npm test                    # vitest
-npm run typecheck           # source + the must-compile type tests
-npm run typecheck:negative  # asserts the must-NOT-compile cases still fail
-npm run typecheck:consumer  # compiles a consumer against dist/ at TypeScript 5.4
-npm run build
-npm run smoke               # exercises the built bundle end to end
+pnpm install
+pnpm test                    # vitest
+pnpm typecheck               # source + the must-compile type tests
+pnpm typecheck:negative      # asserts the must-NOT-compile cases still fail
+pnpm build
+pnpm smoke                   # exercises the built bundle end to end
+pnpm check-exports           # attw, against the ESM-only profile
+pnpm check-jsr               # jsr publish --dry-run, including the slow-type check
+```
+
+Two artifacts ship from one source tree, and the TypeScript 5.4 floor applies to
+both — so there are two floor checks, because neither covers the other:
+
+```sh
+pnpm typecheck:min        # compiles src/ at 5.4  — what JSR consumers get
+pnpm typecheck:consumer   # compiles against dist/index.d.ts at 5.4 — npm consumers
 ```
 
 `scripts/smoke.mjs` takes no arguments and imports nothing but `dist/`, so it
@@ -319,6 +342,31 @@ node scripts/smoke.mjs
 deno run --allow-read --allow-env --node-modules-dir=auto scripts/smoke.mjs
 bun scripts/smoke.mjs
 ```
+
+## Releasing
+
+Conventional commits on `main` keep a
+[release-please](https://github.com/googleapis/release-please) PR open. Merging
+it tags a release, which publishes to npm and JSR. Both authenticate with the
+workflow's OIDC token, so there are no publish secrets in the repository — the
+one-time setup is a trusted publisher on npm and a linked repository on JSR.
+
+Between releases, every branch push and pull request publishes an installable
+preview to [pkg.pr.new](https://pkg.pr.new):
+
+```sh
+npm i https://pkg.pr.new/johnstonmatt/with-openapi@<sha>
+```
+
+Previews are npm-side only. pkg.pr.new serves npm-compatible tarballs, and
+Deno's resolver rejects a bare tarball URL (`Not implemented scheme 'https'`),
+so Deno and JSR consumers cannot install one. JSR has no pre-release channel at
+all. To try a branch under Deno, check the repository out and point an import
+map at `src/index.ts`.
+
+CI runs the built bundle on Node, Deno and Bun on every push. The claim that
+this package is Web Fetch only — no `node:` imports, no code generation — is
+only worth making if something checks it.
 
 ## License
 

@@ -1,0 +1,16 @@
+{
+  "name": "@johnstonmatt/with-openapi",
+  "version": "0.1.0",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "imports": {
+    "@supabase/middleware": "npm:@supabase/middleware@^0.5.0",
+    "@cfworker/json-schema": "npm:@cfworker/json-schema@^4.1.1",
+    "openapi3-ts/oas31": "npm:openapi3-ts@^4.6.1/oas31"
+  },
+  "publish": {
+    "include": ["src/**/*.ts", "README.md", "LICENSE"],
+    "exclude": ["src/**/*.test.ts", "src/fixture.ts"]
+  }
+}

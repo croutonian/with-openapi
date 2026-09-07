@@ -1,0 +1,61 @@
+# Branch deploys. Every push to a branch and every pull request publishes an
+# installable preview of the package to pkg.pr.new, so a change can be tried
+# from a real install before it is released:
+#
+#   npm i https://pkg.pr.new/johnstonmatt/with-openapi@<sha>
+#
+# Requires the pkg.pr.new GitHub App to be installed on the repository:
+# https://github.com/apps/pkg-pr-new
+#
+# npm-side only. pkg.pr.new serves npm-compatible tarballs, and Deno's resolver
+# rejects a bare tarball URL (`Not implemented scheme 'https'`), so Deno and JSR
+# consumers cannot install a preview. JSR has no pre-release channel at all.
+name: Preview release
+
+on:
+  push:
+    branches: ['**']
+    tags-ignore: ['**']
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: preview-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          # pkg.pr.new derives the commit it publishes under from git history.
+          fetch-depth: 0
+          filter: tree:0
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@8912a9102ac27614460f54aedde9e1e7f9aec20d # v6.0.5
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
+
+      # A preview that does not work is worse than no preview, so it has to
+      # pass the same tests a release does before it goes out.
+      - run: pnpm test
+      - run: pnpm build
+      - run: pnpm smoke
+
+      # `--comment` has nothing to attach to on a plain branch push; on a pull
+      # request it edits one comment in place instead of adding one per commit.
+      - name: Publish preview package
+        run: |
+          npx pkg-pr-new@0.0.88 publish --pnpm \
+            --comment=${{ github.event_name == 'pull_request' && 'update' || 'off' }}
