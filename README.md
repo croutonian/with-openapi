@@ -78,6 +78,10 @@ if (ctx.openapi.matched) {
 }
 ```
 
+`params` is `unknown` here. Give the middleware a document whose type survived
+and it narrows to that operation's own parameters — see
+[Typed against your document](#typed-against-your-document).
+
 Everything here is something only this middleware knows. What you already have,
 it does not hand back: not the `document` you passed in, not the method
 (`req.method`), not whether you configured `validate: false`, and not the parsed
@@ -372,31 +376,40 @@ value that was validated; and the coercion in the urlencoded row is applied for
 validation and then dropped, so a handler reading that body itself sees the
 original text.
 
-## Typed against your document: `OpenAPIInterface`
+## Typed against your document
 
-The middleware reads whatever document it is handed at runtime, so
-`ctx.openapi.params` is `unknown` and a handler narrows it. That is the honest
-answer when the document is data.
-
-When the document is a literal in your own source, its type is right there —
-and the only thing that throws it away is assigning it to `OpenAPIObject`
-first. `OpenAPIInterface` takes the literal as a `const` type parameter and
-hands the captured type back:
+`ctx.openapi.params` is `unknown` by default, because the middleware reads
+whatever document it is handed at runtime. Hand it a document whose type
+survived, though, and it narrows to that document's own operations:
 
 ```ts
 import { pipeline } from '@supabase/middleware'
-import { OpenAPIInterface, withOpenApi } from '@croutonian/with-openapi'
+import { withOpenApi, defineDocument } from '@croutonian/with-openapi'
 
-const api = new OpenAPIInterface({
+const document = defineDocument({
   openapi: '3.1.0',
   info: { title: 'Acme', version: '1' },
   paths: {
     '/users/{id}': {
-      parameters: [
-        { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
-      ],
       get: {
         operationId: 'getUser',
+        parameters: [
+          {
+            name: 'id',
+            in: 'path',
+            required: true,
+            schema: { type: 'integer' },
+          },
+        ],
+        responses: { '200': { description: 'ok' } },
+      },
+    },
+    '/users': {
+      get: {
+        operationId: 'listUsers',
+        parameters: [
+          { name: 'limit', in: 'query', schema: { type: 'integer' } },
+        ],
         responses: { '200': { description: 'ok' } },
       },
     },
@@ -404,51 +417,46 @@ const api = new OpenAPIInterface({
 })
 
 export default {
-  fetch: pipeline(
-    [withOpenApi({ document: api.document })],
-    async (_req, ctx) => {
-      const params = api.params(ctx, '/users/{id}', 'get')
-      if (params === undefined) return new Response(null, { status: 404 })
-      return Response.json({ id: params.path.id }) //  number, not unknown
-    },
-  ),
+  fetch: pipeline([withOpenApi({ document })], async (_req, ctx) => {
+    if (!ctx.openapi.matched) return new Response(null, { status: 404 })
+
+    if (ctx.openapi.operationId === 'getUser') {
+      ctx.openapi.params.path.id //  number
+    }
+    if (ctx.openapi.operationId === 'listUsers') {
+      ctx.openapi.params.query.limit //  number | undefined
+    }
+    return Response.json({})
+  }),
 }
 ```
 
-| Member                                                  | What it gives you                                                                                              |
-| ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `api.document`                                          | The document, literal type intact — hand it to `withOpenApi` as usual.                                         |
-| `api.operation(route, method)`                          | The Operation Object, typed — `x-` extensions and `tags` read back as declared.                                |
-| `api.params(ctx, route, method)`                        | That operation's parameters, each typed by its schema. `undefined` when the request was a different operation. |
-| `RoutesOf<D>` / `MethodsOf<D, R>` / `OperationIdsOf<D>` | The declared routes, a route's methods, and every `operationId`, as unions.                                    |
-
-The class does not produce the middleware. `withOpenApi` is still the one way
-to mount this and takes `api.document` like any other document — a
-`middleware()` method would only have been a second spelling of the same
-thing, and the one you would reach for by mistake.
-
-`params` is a cast, so a guard keeps it honest: the contributed `route` must be
-the one asked for, and where the document gives the operation an
-`operationId`, that must match too. The `operationId` check is what makes
-naming the wrong `method` safe — the contribution carries no method, so
-without it, asking for `'post'` types on a `get` request would hand back a
-confidently wrong shape. An operation with no `operationId` cannot be
-cross-checked that way, which is one more reason to declare them.
+`ctx.openapi` becomes one branch per declared operation, discriminated by
+`operationId` (or `route`). Narrowing is all it takes — no cast, no route
+argument, no runtime guard, and the compiler knows when you have handled every
+operation.
 
 ### The document has to keep its type
 
 ```ts
-new OpenAPIInterface({ /* literal inline */ })         // ✅ full types
-const doc = { ... } satisfies OpenAPIObject            // ✅ full types
-const doc: OpenAPIObject = { ... }                     // ❌ compile error
-import doc from './openapi.json'                       // ❌ compile error
+withOpenApi({ document: { /* literal inline */ } })   // ✅
+const document = defineDocument({ ... })              // ✅ in its own module
+const document = { ... } satisfies OpenAPIObject      // ⚠️  see below
+const document: OpenAPIObject = { ... }               // ❌ falls back to unknown
+import document from './openapi.json'                 // ❌ fails to compile
 ```
 
-Both failures are loud, not silent. An annotation widens `paths` to an index
-signature, and `paths` is optional on `OpenAPIObject`, so `RoutesOf` becomes
-`never` and no route name can be passed to `params`. A `.json` import keeps its
-keys but widens every value, so `in: string` stops narrowing to a
-`ParameterLocation` and the document fails the constructor's constraint.
+`defineDocument` is an identity function whose only job is its `const` type
+parameter. `satisfies` gets close — route names and schemas survive it — but it
+still lets leaf values widen where the target type says `string`, so
+`servers[0].url` comes back as `string` rather than the URL you wrote.
+
+An annotation is the one that costs you silently: `paths` widens to an index
+signature, and the contribution **falls back to the unspecialized shape**, so
+everything keeps working and `params` stays `unknown`. That fallback is
+deliberate — it is what makes this additive rather than breaking. A `.json`
+import fails earlier and louder: its values widen too, so `in: string` no
+longer narrows to a `ParameterLocation` and the document fails the constraint.
 
 ### What the projections cover
 
@@ -463,6 +471,9 @@ recursive schema terminates.
 Not interpreted: `allOf`, `oneOf`, `anyOf`. Those resolve to `unknown`, which
 is what the untyped path gives you anyway — guessing at them is how a type
 starts disagreeing with the validator that actually runs.
+
+`RoutesOf`, `MethodsOf`, `OperationIdsOf`, `OperationOf`, `ParamsFor` and
+`FromSchema` are exported for reading the same document yourself.
 
 ## CORS
 

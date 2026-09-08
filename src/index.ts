@@ -15,10 +15,11 @@
 
 export { withOpenApi } from './with-openapi.js'
 
-export { OpenAPIInterface } from './interface.js'
-export type { OpenApiCtx } from './interface.js'
+export { defineDocument } from './define-document.js'
 export type {
+  ContributionFor,
   FromSchema,
+  MatchedFor,
   MethodsOf,
   OperationIdsOf,
   OperationOf,

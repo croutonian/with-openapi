@@ -13,6 +13,12 @@
  * which is the same answer the untyped path gives.
  */
 
+import type {
+  OpenApiContribution,
+  OpenApiMatched,
+  OpenApiUnmatched,
+} from './types.js'
+
 /**
  * Collapse an intersection of mapped types into one object type.
  *
@@ -225,3 +231,52 @@ export type ParamsFor<Document, Route extends string, Method extends string> = {
   readonly header: ParametersIn<Document, Route, Method, 'header'>
   readonly cookie: ParametersIn<Document, Route, Method, 'cookie'>
 }
+
+/**
+ * The `matched` branch for one operation, with `route`, `operation` and
+ * `params` specialized to it.
+ *
+ * `security` and `mediaType` keep their general types: they are not what the
+ * narrowing is for, and pinning them would add conditional depth for no gain.
+ */
+type MatchedOperation<Document, Route extends string, Method extends string> = {
+  readonly matched: true
+  readonly route: Route
+  readonly operation: OperationOf<Document, Route, Method>
+  readonly operationId: OperationOf<Document, Route, Method> extends {
+    operationId: infer Id
+  }
+    ? Id
+    : undefined
+  readonly security: OpenApiMatched['security']
+  readonly params: ParamsFor<Document, Route, Method>
+  readonly mediaType: OpenApiMatched['mediaType']
+}
+
+/**
+ * Every operation the document declares, as a union — one branch each, so
+ * narrowing on `operationId` (or `route`) inside a handler reaches that
+ * operation's own parameter types with no cast.
+ */
+export type MatchedFor<Document> = {
+  [Route in RoutesOf<Document>]: {
+    [Method in MethodsOf<Document, Route>]: MatchedOperation<
+      Document,
+      Route,
+      Method
+    >
+  }[MethodsOf<Document, Route>]
+}[RoutesOf<Document>]
+
+/**
+ * What lands at `ctx.openapi` for a given document.
+ *
+ * Falls back to the unspecialized {@link OpenApiContribution} when the
+ * document arrived without its literal type — annotated `: OpenAPIObject`,
+ * say. `RoutesOf` is `never` there, which would otherwise leave a union with
+ * no `matched: true` branch at all and break every existing consumer.
+ * Degrading to today's shape is what keeps this change additive.
+ */
+export type ContributionFor<Document> = [RoutesOf<Document>] extends [never]
+  ? OpenApiContribution
+  : MatchedFor<Document> | OpenApiUnmatched

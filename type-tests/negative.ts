@@ -8,7 +8,7 @@ import { pipeline } from '@supabase/middleware'
 import type { FetchHandler } from '@supabase/middleware'
 import type { OpenAPIObject } from 'openapi3-ts/oas31'
 
-import { OpenAPIInterface, withOpenApi } from '../src/index.js'
+import { defineDocument, withOpenApi } from '../src/index.js'
 
 const document: OpenAPIObject = {
   openapi: '3.1.0',
@@ -49,22 +49,9 @@ withOpenApi({ document }, async (_req, ctx) => {
   return Response.json({ limit })
 }) satisfies FetchHandler
 
-// N6 — a document annotated `OpenAPIObject` loses its literal type before the
-// constructor sees it, and `paths` is optional on that interface, so
-// `RoutesOf` resolves to `never` and no route name is nameable. The failure is
-// at the projection, and it is loud — which is the point: silently handing
-// back `unknown` would look like it worked.
-// @expect-error TS2345 is not assignable to parameter of type 'never'
-new OpenAPIInterface(document).params(
-  { openapi: { matched: false, reason: 'no_route' } } as never,
-  '/users',
-  'get',
-)
-
-// N7 — the shape a `.json` import produces: keys survive but every value
+// N6 — the shape a `.json` import produces: keys survive but every value
 // widens, so `in: string` no longer narrows to a ParameterLocation and the
-// document fails the constructor's own constraint. Also loud, one step
-// earlier.
+// document fails `defineDocument`'s constraint. Loud, at the capture site.
 declare const jsonShaped: {
   openapi: string
   info: { title: string; version: string }
@@ -78,4 +65,15 @@ declare const jsonShaped: {
   }
 }
 // @expect-error TS2345 is not assignable to parameter of type 'OpenAPIObject'
-new OpenAPIInterface(jsonShaped)
+defineDocument(jsonShaped)
+
+// N7 — a document annotated `OpenAPIObject` loses its literal type, so the
+// contribution falls back to the unspecialized shape and `params` is
+// `unknown`. The fallback is deliberate — it is what keeps this backward
+// compatible — so the failure is at the use, not at the mount.
+withOpenApi({ document }, async (_req, ctx) => {
+  if (!ctx.openapi.matched) return new Response()
+  // @expect-error TS2322 Type 'unknown' is not assignable to type 'number'
+  const limit: number = ctx.openapi.params.query['limit']
+  return Response.json({ limit })
+})
