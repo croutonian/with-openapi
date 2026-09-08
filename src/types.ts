@@ -16,7 +16,16 @@ import type { SchemaDraft } from './schema.js'
 /** Where a parameter was declared. */
 export type ParameterIn = 'path' | 'query' | 'header' | 'cookie'
 
-/** Deserialized, coerced parameters, grouped by where they came from. */
+/**
+ * Deserialized, coerced parameters, grouped by where they came from.
+ *
+ * `unknown` rather than the schema's type: the document is read at runtime, and
+ * lifting a schema into a TypeScript type needs code generation, which this
+ * package does not do. The value is coerced and checked; narrowing the type is
+ * the consumer's. Pinned by `N5` in `type-tests/negative.ts`, so widening this
+ * to `any` — which would compile and look safer while checking nothing — fails
+ * the build.
+ */
 export interface OpenApiParams {
   readonly path: Readonly<Record<string, unknown>>
   readonly query: Readonly<Record<string, unknown>>
@@ -286,10 +295,12 @@ export interface OpenApiMatched {
    * Deserialized and (unless turned off) coerced parameters, keyed by
    * location.
    *
-   * The one that saves real work: `params.query.limit` is already a number,
-   * already checked against its `maximum`, with `style`/`explode` honoured, so
+   * The one that saves real work: `params.query.limit` holds a number, already
+   * checked against its `maximum`, with `style`/`explode` honoured, so
    * `?ids=1,2,3` arrives as an array and `?filter[a]=b` as an object. Without
    * it every handler re-reads `URLSearchParams` and re-coerces by hand.
+   *
+   * Values only — every entry is typed `unknown`. See {@link OpenApiParams}.
    */
   readonly params: OpenApiParams
   /**
