@@ -15,6 +15,17 @@
 
 export { withOpenApi } from './with-openapi.js'
 
+export { OpenAPIInterface } from './interface.js'
+export type { OpenApiCtx } from './interface.js'
+export type {
+  FromSchema,
+  MethodsOf,
+  OperationIdsOf,
+  OperationOf,
+  ParamsFor,
+  RoutesOf,
+} from './document-types.js'
+
 export type { CorsOrigin, CorsPolicy, OpenApiCorsOptions } from './cors.js'
 
 export { SCALAR_CDN_URL } from './reference.js'

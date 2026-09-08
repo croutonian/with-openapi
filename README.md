@@ -372,6 +372,91 @@ value that was validated; and the coercion in the urlencoded row is applied for
 validation and then dropped, so a handler reading that body itself sees the
 original text.
 
+## Typed against your document: `OpenAPIInterface`
+
+The middleware reads whatever document it is handed at runtime, so
+`ctx.openapi.params` is `unknown` and a handler narrows it. That is the honest
+answer when the document is data.
+
+When the document is a literal in your own source, its type is right there —
+and the only thing that throws it away is assigning it to `OpenAPIObject`
+first. `OpenAPIInterface` takes the literal as a `const` type parameter and
+hands the captured type back:
+
+```ts
+import { pipeline } from '@supabase/middleware'
+import { OpenAPIInterface } from '@croutonian/with-openapi'
+
+const api = new OpenAPIInterface({
+  openapi: '3.1.0',
+  info: { title: 'Acme', version: '1' },
+  paths: {
+    '/users/{id}': {
+      parameters: [
+        { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
+      ],
+      get: {
+        operationId: 'getUser',
+        responses: { '200': { description: 'ok' } },
+      },
+    },
+  },
+})
+
+export default {
+  fetch: pipeline([api.middleware()], async (_req, ctx) => {
+    const params = api.params(ctx, '/users/{id}', 'get')
+    if (params === undefined) return new Response(null, { status: 404 })
+    return Response.json({ id: params.path.id }) //  number, not unknown
+  }),
+}
+```
+
+| Member                                                  | What it gives you                                                                                              |
+| ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `api.document`                                          | The document, literal type intact.                                                                             |
+| `api.middleware(config?)`                               | A pipeline entry for this document; the rest of the config is optional.                                        |
+| `api.operation(route, method)`                          | The Operation Object, typed — `x-` extensions and `tags` read back as declared.                                |
+| `api.params(ctx, route, method)`                        | That operation's parameters, each typed by its schema. `undefined` when the request was a different operation. |
+| `RoutesOf<D>` / `MethodsOf<D, R>` / `OperationIdsOf<D>` | The declared routes, a route's methods, and every `operationId`, as unions.                                    |
+
+`params` is a cast, so a guard keeps it honest: the contributed `route` must be
+the one asked for, and where the document gives the operation an
+`operationId`, that must match too. The `operationId` check is what makes
+naming the wrong `method` safe — the contribution carries no method, so
+without it, asking for `'post'` types on a `get` request would hand back a
+confidently wrong shape. An operation with no `operationId` cannot be
+cross-checked that way, which is one more reason to declare them.
+
+### The document has to keep its type
+
+```ts
+new OpenAPIInterface({ /* literal inline */ })         // ✅ full types
+const doc = { ... } satisfies OpenAPIObject            // ✅ full types
+const doc: OpenAPIObject = { ... }                     // ❌ compile error
+import doc from './openapi.json'                       // ❌ compile error
+```
+
+Both failures are loud, not silent. An annotation widens `paths` to an index
+signature, and `paths` is optional on `OpenAPIObject`, so `RoutesOf` becomes
+`never` and no route name can be passed to `params`. A `.json` import keeps its
+keys but widens every value, so `in: string` stops narrowing to a
+`ParameterLocation` and the document fails the constructor's constraint.
+
+### What the projections cover
+
+A deliberate subset of JSON Schema, not an implementation of it — the runtime
+validator remains the authority. Covered: `$ref` into `#/components/schemas`
+and `#/components/parameters`, `const`, `enum`, `string` / `integer` /
+`number` / `boolean` / `null`, arrays via `items`, objects via `properties`
+with `required` driving optionality, and Path Item parameters merged into every
+operation beneath them. `$ref` chains are followed eight levels deep, so a
+recursive schema terminates.
+
+Not interpreted: `allOf`, `oneOf`, `anyOf`. Those resolve to `unknown`, which
+is what the untyped path gives you anyway — guessing at them is how a type
+starts disagreeing with the validator that actually runs.
+
 ## CORS
 
 An OpenAPI document already knows most of a CORS policy. `cors` derives it, per
