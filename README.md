@@ -6,7 +6,8 @@
 [![CI](https://github.com/croutonian/with-openapi/actions/workflows/ci.yml/badge.svg)](https://github.com/croutonian/with-openapi/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
-OpenAPI middleware for [`@supabase/middleware`](https://github.com/supabase/middleware).
+OpenAPI middleware for
+[`@supabase/middleware`](https://github.com/supabase/middleware).
 
 An OpenAPI document already says what your API accepts. This makes it say it at
 runtime: every request is matched to an Operation Object, optionally refused if
@@ -24,7 +25,8 @@ export default {
     [withOpenApi({ document, reference: true })],
     async (_req, ctx) => {
       if (!ctx.openapi.matched) return new Response(null, { status: 404 })
-      // Already validated, already coerced: `limit` is a number.
+      // Already validated and coerced, so this holds the number 10 — though
+      // its static type is `unknown`; see Parameters.
       const { limit } = ctx.openapi.params.query
       return Response.json({ operation: ctx.openapi.operationId, limit })
     },
@@ -68,16 +70,30 @@ A discriminated union on `matched`:
 ```ts
 if (ctx.openapi.matched) {
   ctx.openapi.route //  '/users/{id}' — the path template, not the pathname
-  ctx.openapi.method //  'get'
   ctx.openapi.operation //  the Operation Object, `$ref` already followed
   ctx.openapi.operationId //  'getUser'
   ctx.openapi.security //  the operation's, falling back to the document's
   ctx.openapi.params //  { path, query, header, cookie }, deserialized + coerced
-  ctx.openapi.body //  the parsed request body
-  ctx.openapi.mediaType //  the `content` key that matched
-  ctx.openapi.validated //  false when `validate: false`
+  ctx.openapi.mediaType //  which `content` key matched
 }
 ```
+
+Everything here is something only this middleware knows. What you already have,
+it does not hand back: not the `document` you passed in, not the method
+(`req.method`), not whether you configured `validate: false`, and not the parsed
+body — `req.json()` is one call and reading it here does not consume it.
+
+The parsed body is **not** here. Reading it in the middleware does not consume
+it — the framework hands every layer a buffered request — so the handler calls
+`req.json()` and gets the very bytes this middleware validated, without a second
+copy on `ctx` to keep in step with it.
+
+`mediaType` is contributed because it is the reverse case: it names which
+`content` key matched, and so which schema ran, and repeating that takes
+resolving a `$ref` on `requestBody` and reimplementing the exact / `type/*` /
+`*/*` precedence. It is **not** the request's content type — a `*/*` range
+matches anything — so a handler deciding how to parse should read the header,
+which is what this middleware does too.
 
 With the defaults, the handler only ever sees `matched: true` — anything else
 was already answered with a `404` or a `405`. The narrowing matters once you set
@@ -129,10 +145,10 @@ callback before that response is built:
 | `unsupported_media_type` | 415    | The body's content type is not in the operation's `content`.            |
 | `validation_failed`      | 400    | A parameter or body failed its schema.                                  |
 
-`route_not_found` says which of its two causes it was, because they are the
-same status and very different mistakes — a `basePath` nothing starts with
-turns every route into a 404, and blaming the document sends you looking for a
-path that is already in it:
+`route_not_found` says which of its two causes it was, because they are the same
+status and very different mistakes — a `basePath` nothing starts with turns
+every route into a 404, and blaming the document sends you looking for a path
+that is already in it:
 
 ```
 no operation in the API description matches "/nope"
@@ -164,10 +180,10 @@ path to the property that failed.
 
 ### Descriptions
 
-`message` is the validator's, and says what is mechanically wrong.
-`description` is the **document's own prose** for whatever failed, and is
-usually the half a caller can act on. You wrote it once; there is no reason for
-an error response to throw it away.
+`message` is the validator's, and says what is mechanically wrong. `description`
+is the **document's own prose** for whatever failed, and is usually the half a
+caller can act on. You wrote it once; there is no reason for an error response
+to throw it away.
 
 It is resolved from the most specific place that has it:
 
@@ -192,14 +208,14 @@ body                     Instance does not have required property "name".
 That third row is the one worth pointing at: `required` fails against the
 _object_, so the obvious implementation describes the object — "A person with
 access to the workspace" — which says nothing about what is missing. The
-property is named only inside the validator's message, so it is read from
-there, and falls back to the container's prose if that wording ever changes.
+property is named only inside the validator's message, so it is read from there,
+and falls back to the container's prose if that wording ever changes.
 
 A field with nothing written about it simply has no `description`. Set
-`validate: { describe: false }` to leave them all off — descriptions are
-written for a document's consumers, who are the same people reading these
-errors, but turn it off if yours carries notes you would rather not return in
-a response body.
+`validate: { describe: false }` to leave them all off — descriptions are written
+for a document's consumers, who are the same people reading these errors, but
+turn it off if yours carries notes you would rather not return in a response
+body.
 
 To answer in your own error envelope:
 
@@ -261,8 +277,8 @@ reference: {
 }
 ```
 
-A path you give explicitly is taken **literally** — `basePath` is not applied
-to it, so an API under `/api/v1` can still put its docs at `/docs`:
+A path you give explicitly is taken **literally** — `basePath` is not applied to
+it, so an API under `/api/v1` can still put its docs at `/docs`:
 
 ```ts
 withOpenApi({ document, basePath: '/api/v1', reference: { path: '/docs' } })
@@ -298,6 +314,13 @@ withOpenApi({
 ```
 
 ## Parameters
+
+Every parameter is typed `unknown`, whatever its schema says. The document is
+data this middleware reads at runtime, and turning a schema into a TypeScript
+type needs code generation, which is not something this package does. So the
+_value_ is coerced and checked — `params.query.limit` holds the number `10` —
+while the _type_ you hover is `unknown`, and narrowing it is yours. Anything
+stronger would be a type that lies when a document changes without a rebuild.
 
 `style` and `explode` are honored, so the document decides how a value is
 spelled:
@@ -337,18 +360,22 @@ the request says it is:
 | `multipart/form-data`                | object, with parts left as `File`  | no        |
 | anything else                        | not read at all                    | no        |
 
-Multipart parts are `File` objects, which no JSON Schema describes, so the body
-is parsed onto `ctx` but not schema-checked. Binary media types are never
-buffered — there is no shape to check, and reading a large upload to ignore it
-is pure cost. `required` is enforced for both.
+Multipart parts are `File` objects, which no JSON Schema describes, so a
+multipart body is parsed — enough to reject a malformed one and to enforce
+`required` — but never schema-checked. Binary media types are never buffered:
+there is no shape to check, and reading a large upload to ignore it is pure
+cost.
 
-Reading the body here does not consume it. The framework hands every layer a
-buffered request, so the handler can still call `req.json()`.
+Two consequences of the body not being contributed, both worth knowing: reading
+it here does not consume it, so `req.json()` in the handler returns the same
+value that was validated; and the coercion in the urlencoded row is applied for
+validation and then dropped, so a handler reading that body itself sees the
+original text.
 
 ## CORS
 
-An OpenAPI document already knows most of a CORS policy. `cors` derives it,
-per route:
+An OpenAPI document already knows most of a CORS policy. `cors` derives it, per
+route:
 
 ```ts
 withOpenApi({
@@ -376,15 +403,15 @@ comes from.
 Three things worth knowing:
 
 - **`origin` is required and never derived.** A document says where an API
-  lives, not who may call it — `servers` is not an allowlist, and treating it
-  as one would be a security decision made from the wrong data. Same for
+  lives, not who may call it — `servers` is not an allowlist, and treating it as
+  one would be a security decision made from the wrong data. Same for
   `credentials`.
 - **Rejections are stamped too.** An unstamped `400` reaches a browser as an
   opaque CORS error rather than the violations it is carrying.
 - **The document is the source of truth for headers.** A request header the API
   reads but the document does not declare will be refused by the browser. That
-  is usually the document being wrong; `allowedHeaders` is the escape hatch
-  when it genuinely is not.
+  is usually the document being wrong; `allowedHeaders` is the escape hatch when
+  it genuinely is not.
 
 Preflights are answered after the route match but before the method lookup —
 otherwise the `OPTIONS` no document declares an operation for would come back
@@ -421,11 +448,11 @@ Worth knowing before you wire this into something:
   translating it. A 3.0 document falls back to draft 4, which gets
   `exclusiveMinimum` and `required` right but does **not** translate `nullable`.
   Convert to 3.1 for full fidelity.
-- **Local `$ref`s only.** External and remote references are not fetched.
-  Bundle the document first.
+- **Local `$ref`s only.** External and remote references are not fetched. Bundle
+  the document first.
 - **Requests only.** Responses are not validated. That is the framework's model,
-  not an omission: a middleware runs before the handler, and response shape stays
-  under the handler's ownership.
+  not an omission: a middleware runs before the handler, and response shape
+  stays under the handler's ownership.
 - **`deepObject` is one level deep**, matching what the specification defines.
 - **Trailing slashes are normalized**, so `/users` and `/users/` are one route.
 - Indexing the document for validation stamps each node with its own absolute
@@ -444,8 +471,8 @@ Three, and each is load-bearing:
 - **`@cfworker/json-schema`** — the validator. Zero dependencies, and it
   _interprets_ schemas rather than compiling them to JavaScript, which is what
   lets it run on Cloudflare Workers and anywhere else `new Function` is
-  unavailable. The document is walked once at construction and every subschema in
-  it validated against that one index, so `$ref` — recursive ones included —
+  unavailable. The document is walked once at construction and every subschema
+  in it validated against that one index, so `$ref` — recursive ones included —
   resolves without inlining anything.
 - **`@supabase/middleware`** — the composition engine.
 
@@ -518,10 +545,10 @@ resolves that by publishing from your machine — your npm login, your 2FA, no
 token created and none stored. CI takes over from the next release.
 
 `release.yml` also accepts an `NPM_TOKEN` secret, but it is not a general
-answer: a token cannot answer a one-time password, and npm asks for one on
-every write unless the account's two-factor setting is _Authorization only_.
-Where 2FA covers writes, a CI publish fails with `EOTP` and the first version
-has to come from a human.
+answer: a token cannot answer a one-time password, and npm asks for one on every
+write unless the account's two-factor setting is _Authorization only_. Where 2FA
+covers writes, a CI publish fails with `EOTP` and the first version has to come
+from a human.
 
 Between releases, every branch push and pull request publishes an installable
 preview to [pkg.pr.new](https://pkg.pr.new):

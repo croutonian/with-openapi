@@ -39,3 +39,12 @@ pipeline(
 // N4 — the document is not optional.
 // @expect-error TS2769 Property 'document' is missing
 withOpenApi({ basePath: '/api' }, async () => new Response())
+
+// N5 — coercion happens at runtime, so a parameter is `unknown` and not the
+// type its schema implies. Pinned because widening it to `any` would make this
+// compile and hand every consumer an unchecked value that looks checked.
+// @expect-error TS2322 Type 'unknown' is not assignable to type 'number'
+withOpenApi({ document }, async (_req, ctx) => {
+  const limit: number = ctx.openapi.params.query['limit']
+  return Response.json({ limit })
+}) satisfies FetchHandler
