@@ -31,10 +31,8 @@ const echo = (config: Omit<Partial<WithOpenApiConfig>, 'document'> = {}) =>
             route: ctx.openapi.route,
             operationId: ctx.openapi.operationId,
             params: ctx.openapi.params,
-            body: ctx.openapi.body ?? null,
             mediaType: ctx.openapi.mediaType ?? null,
             security: ctx.openapi.security,
-            validated: ctx.openapi.validated,
           }
         : {
             matched: false,
@@ -59,7 +57,6 @@ describe('matching', () => {
       matched: true,
       route: '/users',
       operationId: 'listUsers',
-      validated: true,
     })
   })
 
@@ -319,11 +316,10 @@ describe('parameters', () => {
 })
 
 describe('request bodies', () => {
-  it('parses and contributes a valid JSON body', async () => {
+  it('accepts a valid JSON body and reports the media type that matched', async () => {
     const res = await echo()(post('/users', { name: 'ada', age: 36 }))
     expect(res.status).toBe(200)
     expect(await res.json()).toMatchObject({
-      body: { name: 'ada', age: 36 },
       mediaType: 'application/json',
     })
   })
@@ -391,17 +387,29 @@ describe('request bodies', () => {
     })
   })
 
-  it('coerces a urlencoded body against its schema', async () => {
-    const res = await echo()(
+  // Every value in a urlencoded body arrives as text, so without coercion an
+  // `age` of `36` would fail its `integer` schema. The coerced value is used
+  // to validate and then dropped -- it is not contributed, and a handler
+  // reading the body itself sees the original text.
+  it('coerces a urlencoded body against its schema before checking it', async () => {
+    const ok = await echo()(
       post('/users', 'name=ada&age=36', 'application/x-www-form-urlencoded'),
     )
-    expect(await res.json()).toMatchObject({
-      body: { name: 'ada', age: 36 },
+    expect(ok.status).toBe(200)
+    expect(await ok.json()).toMatchObject({
       mediaType: 'application/x-www-form-urlencoded',
+    })
+
+    const bad = await echo()(
+      post('/users', 'name=ada&age=later', 'application/x-www-form-urlencoded'),
+    )
+    expect(bad.status).toBe(400)
+    expect(await bad.json()).toMatchObject({
+      violations: [{ in: 'body', keyword: 'type' }],
     })
   })
 
-  it('parses a multipart body without schema-checking its parts', async () => {
+  it('accepts a multipart body without schema-checking its parts', async () => {
     const form = new FormData()
     form.set('name', 'ada')
     form.set(
@@ -409,18 +417,17 @@ describe('request bodies', () => {
       new File([new Uint8Array([1, 2, 3])], 'a.png', { type: 'image/png' }),
     )
 
-    const res = await withOpenApi({ document }, async (_req, ctx) =>
-      Response.json({
+    // The media type is reported so the handler knows which parse the
+    // document expects; doing that parse is the handler's own job, and the
+    // multipart body survives being read here for `required`.
+    const res = await withOpenApi({ document }, async (req, ctx) => {
+      const read = await req.formData()
+      return Response.json({
         mediaType: ctx.openapi.matched ? ctx.openapi.mediaType : null,
-        name: ctx.openapi.matched
-          ? (ctx.openapi.body as Record<string, unknown>)['name']
-          : null,
-        avatarIsFile:
-          ctx.openapi.matched &&
-          (ctx.openapi.body as Record<string, unknown>)['avatar'] instanceof
-            File,
-      }),
-    )(new Request('http://localhost/users', { method: 'POST', body: form }))
+        name: read.get('name'),
+        avatarIsFile: read.get('avatar') instanceof File,
+      })
+    })(new Request('http://localhost/users', { method: 'POST', body: form }))
 
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({
@@ -462,28 +469,28 @@ describe('request bodies', () => {
     expect(res.status).toBe(200)
   })
 
-  it('leaves the body readable by the handler', async () => {
-    const handler = withOpenApi({ document }, async (req, ctx) =>
-      Response.json({
-        fromCtx: ctx.openapi.matched && ctx.openapi.body,
-        again: await req.json(),
-      }),
+  // The parsed body is deliberately not contributed, so this is the only way
+  // a handler gets at it -- and the whole arrangement rests on reading it here
+  // not consuming it. If that ever stopped holding, every handler downstream
+  // would break at once.
+  it('leaves the body readable by the handler after validating it', async () => {
+    const handler = withOpenApi({ document }, async (req) =>
+      Response.json({ again: await req.json() }),
     )
     const res = await handler(post('/users', { name: 'ada' }))
-    expect(await res.json()).toEqual({
-      fromCtx: { name: 'ada' },
-      again: { name: 'ada' },
-    })
+    expect(await res.json()).toEqual({ again: { name: 'ada' } })
   })
 })
 
 describe('validate: false', () => {
   it('matches and deserializes without rejecting anything', async () => {
+    // limit=999 exceeds the schema's maximum, so a 200 here *is* the
+    // assertion that nothing was checked -- and the value still arrives
+    // deserialized and coerced.
     const res = await echo({ validate: false })(get('/users?limit=999'))
     expect(res.status).toBe(200)
     expect(await res.json()).toMatchObject({
       matched: true,
-      validated: false,
       params: { query: { limit: 999 } },
     })
   })
@@ -498,7 +505,7 @@ describe('validate: false', () => {
       post('/users', { nope: true }),
     )
     expect(res.status).toBe(200)
-    expect(await res.json()).toMatchObject({ body: null, mediaType: null })
+    expect(await res.json()).toMatchObject({ mediaType: null })
   })
 })
 

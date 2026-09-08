@@ -157,25 +157,19 @@ function defaultRejectionResponse(rejection: OpenApiRejection): Response {
 }
 
 function unmatched(
-  document: OpenAPIObject,
   reason: OpenApiUnmatched['reason'],
-  method: string,
   route: string | undefined,
 ): { openapi: OpenApiUnmatched } {
   return {
     openapi: {
       matched: false,
       reason,
-      document,
       route,
-      method,
       operation: undefined,
       operationId: undefined,
       security: undefined,
       params: EMPTY_PARAMS,
-      body: undefined,
       mediaType: undefined,
-      validated: false,
     },
   }
 }
@@ -363,7 +357,7 @@ export const withOpenApi: Middleware<
 
       if (config.skip?.(req) === true) {
         return {
-          result: unmatched(document, 'skipped', req.method, undefined),
+          result: unmatched('skipped', undefined),
           route: undefined,
         }
       }
@@ -403,7 +397,7 @@ export const withOpenApi: Middleware<
       if (match === undefined) {
         if (onUnknownRoute === 'pass') {
           return {
-            result: unmatched(document, 'no_route', req.method, undefined),
+            result: unmatched('no_route', undefined),
             route: undefined,
           }
         }
@@ -441,12 +435,7 @@ export const withOpenApi: Middleware<
       if (operation === undefined) {
         if (onUnknownMethod === 'pass') {
           return {
-            result: unmatched(
-              document,
-              'no_operation',
-              req.method,
-              match.route.template,
-            ),
+            result: unmatched('no_operation', match.route.template),
             route: match.route,
           }
         }
@@ -508,7 +497,6 @@ export const withOpenApi: Middleware<
         }
       }
 
-      let body: unknown
       let mediaType: string | undefined
 
       const requestBody = operation.requestBody
@@ -551,7 +539,6 @@ export const withOpenApi: Middleware<
           violations.push({ in: 'body', message: read.message })
         } else {
           mediaType = read.content.mediaType
-          body = read.value
           if (
             read.validatable &&
             read.content.schema !== undefined &&
@@ -595,16 +582,12 @@ export const withOpenApi: Middleware<
         result: {
           openapi: {
             matched: true,
-            document,
             route: operation.route,
-            method: operation.method,
             operation: operation.operation,
             operationId: operation.operationId,
             security: operation.security,
             params,
-            body,
             mediaType,
-            validated: options !== undefined,
           },
         },
         route: match.route,

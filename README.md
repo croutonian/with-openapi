@@ -68,16 +68,31 @@ A discriminated union on `matched`:
 ```ts
 if (ctx.openapi.matched) {
   ctx.openapi.route //  '/users/{id}' — the path template, not the pathname
-  ctx.openapi.method //  'get'
   ctx.openapi.operation //  the Operation Object, `$ref` already followed
   ctx.openapi.operationId //  'getUser'
   ctx.openapi.security //  the operation's, falling back to the document's
   ctx.openapi.params //  { path, query, header, cookie }, deserialized + coerced
-  ctx.openapi.body //  the parsed request body
-  ctx.openapi.mediaType //  the `content` key that matched
-  ctx.openapi.validated //  false when `validate: false`
+  ctx.openapi.mediaType //  which `content` key matched
 }
 ```
+
+Everything here is something only this middleware knows. What you already
+have, it does not hand back: not the `document` you passed in, not the method
+(`req.method`), not whether you configured `validate: false`, and not the
+parsed body — `req.json()` is one call and reading it here does not consume
+it.
+
+The parsed body is **not** here. Reading it in the middleware does not consume
+it — the framework hands every layer a buffered request — so the handler calls
+`req.json()` and gets the very bytes this middleware validated, without a
+second copy on `ctx` to keep in step with it.
+
+`mediaType` is contributed because it is the reverse case: it names which
+`content` key matched, and so which schema ran, and repeating that takes
+resolving a `$ref` on `requestBody` and reimplementing the exact / `type/*` /
+`*/*` precedence. It is **not** the request's content type — a `*/*` range
+matches anything — so a handler deciding how to parse should read the header,
+which is what this middleware does too.
 
 With the defaults, the handler only ever sees `matched: true` — anything else
 was already answered with a `404` or a `405`. The narrowing matters once you set
@@ -337,13 +352,17 @@ the request says it is:
 | `multipart/form-data`                | object, with parts left as `File`  | no        |
 | anything else                        | not read at all                    | no        |
 
-Multipart parts are `File` objects, which no JSON Schema describes, so the body
-is parsed onto `ctx` but not schema-checked. Binary media types are never
-buffered — there is no shape to check, and reading a large upload to ignore it
-is pure cost. `required` is enforced for both.
+Multipart parts are `File` objects, which no JSON Schema describes, so a
+multipart body is parsed — enough to reject a malformed one and to enforce
+`required` — but never schema-checked. Binary media types are never buffered:
+there is no shape to check, and reading a large upload to ignore it is pure
+cost.
 
-Reading the body here does not consume it. The framework hands every layer a
-buffered request, so the handler can still call `req.json()`.
+Two consequences of the body not being contributed, both worth knowing:
+reading it here does not consume it, so `req.json()` in the handler returns the
+same value that was validated; and the coercion in the urlencoded row is
+applied for validation and then dropped, so a handler reading that body itself
+sees the original text.
 
 ## CORS
 

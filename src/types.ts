@@ -10,7 +10,6 @@ import type {
 } from 'openapi3-ts/oas31'
 
 import type { OpenApiCorsOptions } from './cors.js'
-import type { HttpMethod } from './document.js'
 import type { ScalarReferenceOptions } from './reference.js'
 import type { SchemaDraft } from './schema.js'
 
@@ -94,7 +93,7 @@ export interface OpenApiValidateOptions {
   cookie?: boolean
   /**
    * Check — and therefore read and parse — the request body. With this off,
-   * `ctx.openapi.body` is `undefined` and the handler reads the body itself.
+   * the body is never read here and reaches the handler unexamined.
    *
    * @defaultValue `true`
    */
@@ -235,55 +234,118 @@ export interface WithOpenApiConfig {
   ) => Response | undefined | Promise<Response | undefined>
 }
 
-/** `ctx.openapi` when an operation in the document describes the request. */
+/**
+ * `ctx.openapi` when an operation in the document describes the request.
+ *
+ * Every field here is something a consumer would otherwise have to derive from
+ * the document itself. What the caller already holds — the document, the
+ * method, the validate config, the request body — is deliberately absent.
+ */
 export interface OpenApiMatched {
   readonly matched: true
-  /** The document, as passed to `withOpenApi`. */
-  readonly document: OpenAPIObject
-  /** Path template that matched, e.g. `'/users/{id}'`. */
+  /**
+   * Path template that matched, e.g. `'/users/{id}'`.
+   *
+   * The label to group a request under. A pathname cannot be used for that —
+   * `/users/1` and `/users/2` are separate series — so this is what metrics,
+   * traces, rate-limit buckets and audit logs key on.
+   */
   readonly route: string
-  /** Lowercase method the operation was declared under. */
-  readonly method: HttpMethod
-  /** The Operation Object, with its own `$ref` (if any) already followed. */
+  /**
+   * The Operation Object, with its own `$ref` (if any) already followed.
+   *
+   * How a consumer drives behaviour off the document: `x-` extensions
+   * (`operation['x-rate-limit']`, `x-required-scope`), `deprecated` to stamp a
+   * sunset header, `tags` to attribute a request to the team that owns it.
+   *
+   * Here rather than left to a `document.paths` lookup because a Path Item can
+   * itself be a `$ref`, so that lookup is not reliably an Operation Object.
+   */
   readonly operation: OperationObject
+  /**
+   * A name for this operation that survives the path changing, which `route`
+   * does not — so it is the stable key for a permission check, a handler
+   * dispatch table, or a log field you intend to query next year.
+   *
+   * Read through from {@link operation}, so it adds no information; it is here
+   * because it is the field consumers reach for most.
+   */
   readonly operationId: string | undefined
   /**
    * Security requirements in force — the operation's, falling back to the
-   * document's. Contributed for a downstream auth middleware to act on; this
-   * middleware never enforces them.
+   * document's. Never enforced here; contributed so a downstream auth layer
+   * can enforce it without a route table of its own, and tell a public
+   * operation (`[]`) from one that needs a credential.
+   *
+   * The fallback is the reason this is not left to the consumer: reading
+   * `operation.security` alone treats a document-secured operation as public,
+   * which fails open.
    */
   readonly security: SecurityRequirementObject[] | undefined
-  /** Deserialized and (unless turned off) coerced parameters. */
+  /**
+   * Deserialized and (unless turned off) coerced parameters, keyed by
+   * location.
+   *
+   * The one that saves real work: `params.query.limit` is already a number,
+   * already checked against its `maximum`, with `style`/`explode` honoured, so
+   * `?ids=1,2,3` arrives as an array and `?filter[a]=b` as an object. Without
+   * it every handler re-reads `URLSearchParams` and re-coerces by hand.
+   */
   readonly params: OpenApiParams
   /**
-   * The parsed request body. `undefined` when the operation declares none,
-   * when none was sent, when body validation is off, or when the media type
-   * is binary and was deliberately left unread.
+   * Which `content` key matched, and so which Media Type Object's schema the
+   * body was checked against.
+   *
+   * Worth having when an operation declares more than one: it tells a handler
+   * which contract it is serving (`application/json` against
+   * `application/vnd.acme.v2+json`, say), and tells telemetry which declared
+   * variant clients actually send, which is what you need before deprecating
+   * one.
+   *
+   * Not a substitute for the request's own `Content-Type`: a catch-all range
+   * matches anything, so this says which *declaration* applied, not what was
+   * actually sent. A handler choosing how to parse wants the header — which is
+   * what this middleware reads too.
+   *
+   * Contributed because it is the one decision made here that a consumer
+   * cannot cheaply repeat: it takes resolving a `$ref` on `requestBody` and
+   * reimplementing the exact / type-wildcard / catch-all precedence, and a
+   * reimplementation that drifted would disagree about which schema ran. The
+   * parsed body is not contributed for the opposite reason — reading it here
+   * does not consume it, so `req.json()` in the handler is one call away and
+   * returns the same value this middleware validated.
    */
-  readonly body: unknown
-  /** The `content` key that matched the request's content type. */
   readonly mediaType: string | undefined
-  /** `false` when `validate: false` — the request was matched, not checked. */
-  readonly validated: boolean
 }
 
-/** `ctx.openapi` when the document does not describe the request. */
+/**
+ * `ctx.openapi` when the document does not describe the request.
+ *
+ * Only reachable with `onUnknownRoute`/`onUnknownMethod` set to `'pass'`, or a
+ * `skip` — which is how you put this middleware in front of an existing API
+ * and watch what it *would* have refused before letting it refuse anything.
+ */
 export interface OpenApiUnmatched {
   readonly matched: false
-  /** Why nothing matched. */
+  /**
+   * Which kind of miss it was, so an observer can tell them apart: `no_route`
+   * is a path the document does not describe (an undocumented endpoint, or
+   * someone probing), `no_operation` is a path it does describe reached with a
+   * verb it does not, and `skipped` is the consumer's own `skip` firing. Three
+   * different follow-up actions, and nothing else records which happened.
+   */
   readonly reason: 'skipped' | 'no_route' | 'no_operation'
-  readonly document: OpenAPIObject
   /** Set when the path matched but the method was not declared under it. */
   readonly route: string | undefined
-  /** The request's method, as sent. */
-  readonly method: string
   readonly operation: undefined
   readonly operationId: undefined
   readonly security: undefined
+  /**
+   * Always empty here. Kept uniform across both branches so the field every
+   * consumer reaches for does not need a `matched` guard.
+   */
   readonly params: OpenApiParams
-  readonly body: undefined
   readonly mediaType: undefined
-  readonly validated: false
 }
 
 /**
