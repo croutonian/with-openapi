@@ -8,7 +8,7 @@
  */
 
 import { defineMiddleware } from '@supabase/middleware'
-import type { Middleware } from '@supabase/middleware'
+import type { Middleware, SingleKeyEntry } from '@supabase/middleware'
 import type {
   OpenAPIObject,
   ReferenceObject,
@@ -30,6 +30,7 @@ import {
   readParameter,
   type ParameterSources,
 } from './params.js'
+import type { ContributionFor } from './document-types.js'
 import { createRouter } from './router.js'
 import { resolveReference, type ScalarReferenceOptions } from './reference.js'
 import {
@@ -48,6 +49,27 @@ import type {
   ParameterIn,
   WithOpenApiConfig,
 } from './types.js'
+
+/**
+ * The document-aware call signature, intersected *ahead* of the one
+ * `defineMiddleware` produces so it is tried first.
+ *
+ * Only the config-only form is specialized — the form that goes in a
+ * `pipeline` array, which is how this is mounted. `pipeline` then carries the
+ * document-specific contribution through to the handler on its own. The two
+ * handler-taking forms fall through to the general signatures below it, where
+ * `ctx.openapi` keeps its unspecialized shape.
+ *
+ * The runtime is untouched: this re-describes what `defineMiddleware` already
+ * returns. That makes the description an assertion we own — if `ParamsFor`
+ * ever disagrees with what the middleware actually deserializes, the types
+ * are what lie, and nothing here would catch it.
+ */
+interface TypedByDocument {
+  <const Document extends OpenAPIObject>(
+    config: Omit<WithOpenApiConfig, 'document'> & { document: Document },
+  ): SingleKeyEntry<'openapi', Record<never, never>, ContributionFor<Document>>
+}
 
 const PARAMETER_LOCATIONS = ['path', 'query', 'header', 'cookie'] as const
 
@@ -273,12 +295,13 @@ function collectParameters(
  *
  * @category Middleware
  */
-export const withOpenApi: Middleware<
-  'openapi',
-  WithOpenApiConfig,
-  Record<never, never>,
-  OpenApiContribution
-> = defineMiddleware<
+export const withOpenApi: TypedByDocument &
+  Middleware<
+    'openapi',
+    WithOpenApiConfig,
+    Record<never, never>,
+    OpenApiContribution
+  > = defineMiddleware<
   // 1. Key — the slot this contributes to `ctx`.
   'openapi',
   // 2. Config — what the consumer passes to `withOpenApi(config, handler)`.

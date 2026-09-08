@@ -15,6 +15,18 @@
 
 export { withOpenApi } from './with-openapi.js'
 
+export { defineDocument } from './define-document.js'
+export type {
+  ContributionFor,
+  FromSchema,
+  MatchedFor,
+  MethodsOf,
+  OperationIdsOf,
+  OperationOf,
+  ParamsFor,
+  RoutesOf,
+} from './document-types.js'
+
 export type { CorsOrigin, CorsPolicy, OpenApiCorsOptions } from './cors.js'
 
 export { SCALAR_CDN_URL } from './reference.js'

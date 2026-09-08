@@ -78,6 +78,10 @@ if (ctx.openapi.matched) {
 }
 ```
 
+`params` is `unknown` here. Give the middleware a document whose type survived
+and it narrows to that operation's own parameters — see
+[Typed against your document](#typed-against-your-document).
+
 Everything here is something only this middleware knows. What you already have,
 it does not hand back: not the `document` you passed in, not the method
 (`req.method`), not whether you configured `validate: false`, and not the parsed
@@ -371,6 +375,105 @@ it here does not consume it, so `req.json()` in the handler returns the same
 value that was validated; and the coercion in the urlencoded row is applied for
 validation and then dropped, so a handler reading that body itself sees the
 original text.
+
+## Typed against your document
+
+`ctx.openapi.params` is `unknown` by default, because the middleware reads
+whatever document it is handed at runtime. Hand it a document whose type
+survived, though, and it narrows to that document's own operations:
+
+```ts
+import { pipeline } from '@supabase/middleware'
+import { withOpenApi, defineDocument } from '@croutonian/with-openapi'
+
+const document = defineDocument({
+  openapi: '3.1.0',
+  info: { title: 'Acme', version: '1' },
+  paths: {
+    '/users/{id}': {
+      get: {
+        operationId: 'getUser',
+        parameters: [
+          {
+            name: 'id',
+            in: 'path',
+            required: true,
+            schema: { type: 'integer' },
+          },
+        ],
+        responses: { '200': { description: 'ok' } },
+      },
+    },
+    '/users': {
+      get: {
+        operationId: 'listUsers',
+        parameters: [
+          { name: 'limit', in: 'query', schema: { type: 'integer' } },
+        ],
+        responses: { '200': { description: 'ok' } },
+      },
+    },
+  },
+})
+
+export default {
+  fetch: pipeline([withOpenApi({ document })], async (_req, ctx) => {
+    if (!ctx.openapi.matched) return new Response(null, { status: 404 })
+
+    if (ctx.openapi.operationId === 'getUser') {
+      ctx.openapi.params.path.id //  number
+    }
+    if (ctx.openapi.operationId === 'listUsers') {
+      ctx.openapi.params.query.limit //  number | undefined
+    }
+    return Response.json({})
+  }),
+}
+```
+
+`ctx.openapi` becomes one branch per declared operation, discriminated by
+`operationId` (or `route`). Narrowing is all it takes — no cast, no route
+argument, no runtime guard, and the compiler knows when you have handled every
+operation.
+
+### The document has to keep its type
+
+```ts
+withOpenApi({ document: { /* literal inline */ } })   // ✅
+const document = defineDocument({ ... })              // ✅ in its own module
+const document = { ... } satisfies OpenAPIObject      // ⚠️  see below
+const document: OpenAPIObject = { ... }               // ❌ falls back to unknown
+import document from './openapi.json'                 // ❌ fails to compile
+```
+
+`defineDocument` is an identity function whose only job is its `const` type
+parameter. `satisfies` gets close — route names and schemas survive it — but it
+still lets leaf values widen where the target type says `string`, so
+`servers[0].url` comes back as `string` rather than the URL you wrote.
+
+An annotation is the one that costs you silently: `paths` widens to an index
+signature, and the contribution **falls back to the unspecialized shape**, so
+everything keeps working and `params` stays `unknown`. That fallback is
+deliberate — it is what makes this additive rather than breaking. A `.json`
+import fails earlier and louder: its values widen too, so `in: string` no
+longer narrows to a `ParameterLocation` and the document fails the constraint.
+
+### What the projections cover
+
+A deliberate subset of JSON Schema, not an implementation of it — the runtime
+validator remains the authority. Covered: `$ref` into `#/components/schemas`
+and `#/components/parameters`, `const`, `enum`, `string` / `integer` /
+`number` / `boolean` / `null`, arrays via `items`, objects via `properties`
+with `required` driving optionality, and Path Item parameters merged into every
+operation beneath them. `$ref` chains are followed eight levels deep, so a
+recursive schema terminates.
+
+Not interpreted: `allOf`, `oneOf`, `anyOf`. Those resolve to `unknown`, which
+is what the untyped path gives you anyway — guessing at them is how a type
+starts disagreeing with the validator that actually runs.
+
+`RoutesOf`, `MethodsOf`, `OperationIdsOf`, `OperationOf`, `ParamsFor` and
+`FromSchema` are exported for reading the same document yourself.
 
 ## CORS
 
