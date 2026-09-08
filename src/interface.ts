@@ -14,13 +14,17 @@
  * There is no runtime magic here. Types are erased; the constructor stores a
  * reference. What the class buys is a capture site and somewhere to hang the
  * per-operation projections that make a union of every operation usable.
+ *
+ * It does **not** produce the middleware. `withOpenApi` stays the export you
+ * compose with — one way to mount this, the one every other middleware in the
+ * ecosystem is shaped like — and it takes `api.document` like any other
+ * document. Wrapping it in a method here would have been a second way to do
+ * the same thing, and the wrong one to reach for.
  */
 
-import type { SingleKeyEntry } from '@supabase/middleware'
 import type { OpenAPIObject } from 'openapi3-ts/oas31'
 
-import type { OpenApiContribution, WithOpenApiConfig } from './types.js'
-import { withOpenApi } from './with-openapi.js'
+import type { OpenApiContribution } from './types.js'
 import type {
   MethodsOf,
   OperationOf,
@@ -56,7 +60,7 @@ export interface OpenApiCtx {
  * })
  *
  * export default {
- *   fetch: pipeline([api.middleware()], async (_req, ctx) => {
+ *   fetch: pipeline([withOpenApi({ document: api.document })], async (_req, ctx) => {
  *     const params = api.params(ctx, '/users/{id}', 'get')
  *     if (params === undefined) return new Response(null, { status: 404 })
  *     params.path.id // number, not unknown
@@ -82,20 +86,6 @@ export interface OpenApiCtx {
  */
 export class OpenAPIInterface<const Document extends OpenAPIObject> {
   constructor(readonly document: Document) {}
-
-  /**
-   * The middleware for this document, as a `pipeline` entry, with the rest of
-   * the config optional.
-   *
-   * The return type is spelled out rather than inferred because JSR refuses to
-   * publish an inferred one — every function in a public API needs an explicit
-   * return type there, so consumers get `.d.ts` files without a type-check.
-   */
-  middleware(
-    config: Omit<WithOpenApiConfig, 'document'> = {},
-  ): SingleKeyEntry<'openapi', Record<never, never>, OpenApiContribution> {
-    return withOpenApi({ ...config, document: this.document })
-  }
 
   /**
    * The Operation Object at `route` + `method`, typed — so `x-` extensions and

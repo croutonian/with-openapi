@@ -385,7 +385,7 @@ hands the captured type back:
 
 ```ts
 import { pipeline } from '@supabase/middleware'
-import { OpenAPIInterface } from '@croutonian/with-openapi'
+import { OpenAPIInterface, withOpenApi } from '@croutonian/with-openapi'
 
 const api = new OpenAPIInterface({
   openapi: '3.1.0',
@@ -404,21 +404,28 @@ const api = new OpenAPIInterface({
 })
 
 export default {
-  fetch: pipeline([api.middleware()], async (_req, ctx) => {
-    const params = api.params(ctx, '/users/{id}', 'get')
-    if (params === undefined) return new Response(null, { status: 404 })
-    return Response.json({ id: params.path.id }) //  number, not unknown
-  }),
+  fetch: pipeline(
+    [withOpenApi({ document: api.document })],
+    async (_req, ctx) => {
+      const params = api.params(ctx, '/users/{id}', 'get')
+      if (params === undefined) return new Response(null, { status: 404 })
+      return Response.json({ id: params.path.id }) //  number, not unknown
+    },
+  ),
 }
 ```
 
 | Member                                                  | What it gives you                                                                                              |
 | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `api.document`                                          | The document, literal type intact.                                                                             |
-| `api.middleware(config?)`                               | A pipeline entry for this document; the rest of the config is optional.                                        |
+| `api.document`                                          | The document, literal type intact — hand it to `withOpenApi` as usual.                                         |
 | `api.operation(route, method)`                          | The Operation Object, typed — `x-` extensions and `tags` read back as declared.                                |
 | `api.params(ctx, route, method)`                        | That operation's parameters, each typed by its schema. `undefined` when the request was a different operation. |
 | `RoutesOf<D>` / `MethodsOf<D, R>` / `OperationIdsOf<D>` | The declared routes, a route's methods, and every `operationId`, as unions.                                    |
+
+The class does not produce the middleware. `withOpenApi` is still the one way
+to mount this and takes `api.document` like any other document — a
+`middleware()` method would only have been a second spelling of the same
+thing, and the one you would reach for by mistake.
 
 `params` is a cast, so a guard keeps it honest: the contributed `route` must be
 the one asked for, and where the document gives the operation an
