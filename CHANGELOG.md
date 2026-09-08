@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.4.0](https://github.com/croutonian/with-openapi/compare/with-openapi-v0.3.0...with-openapi-v0.4.0) (2026-09-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* remove document, method, body, and validated from ctx.openapi
+
+### Features
+
+* add OpenAPIInterface for typed document projections ([b6c54a4](https://github.com/croutonian/with-openapi/commit/b6c54a49bb4e118cb164e4d0eda3eee54e6c65b7))
+* **interface:** add OpenAPIInterface for typed document projections ([21b20e7](https://github.com/croutonian/with-openapi/commit/21b20e72145770828b1ae4624b3bdf4b63edf485))
+* replace OpenAPIInterface with defineDocument and typed contributions ([4d4cd83](https://github.com/croutonian/with-openapi/commit/4d4cd83cf268a7089cd9f9efe9dc7853b93cdd45))
+
+
+### Code Refactoring
+
+* remove document, method, body, and validated from ctx.openapi ([09db83a](https://github.com/croutonian/with-openapi/commit/09db83a8ff01f07267230e95ef50e465bc31b533))
+
 ## [0.3.0](https://github.com/croutonian/with-openapi/compare/with-openapi-v0.2.0...with-openapi-v0.3.0) (2026-09-07)
 
 
