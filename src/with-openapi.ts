@@ -60,15 +60,25 @@ import type {
  * handler-taking forms fall through to the general signatures below it, where
  * `ctx.openapi` keeps its unspecialized shape.
  *
+ * The whole config is captured, not just the document: `onUnknownRoute`,
+ * `onUnknownMethod` and `skip` are what decide whether an unmatched
+ * contribution is reachable, and on the defaults it is not — so a downstream
+ * middleware or handler gets `matched: true` already narrowed, with no guard
+ * for a case the config rules out.
+ *
  * The runtime is untouched: this re-describes what `defineMiddleware` already
  * returns. That makes the description an assertion we own — if `ParamsFor`
  * ever disagrees with what the middleware actually deserializes, the types
  * are what lie, and nothing here would catch it.
  */
 interface TypedByDocument {
-  <const Document extends OpenAPIObject>(
-    config: Omit<WithOpenApiConfig, 'document'> & { document: Document },
-  ): SingleKeyEntry<'openapi', Record<never, never>, ContributionFor<Document>>
+  <const Config extends WithOpenApiConfig>(
+    config: Config,
+  ): SingleKeyEntry<
+    'openapi',
+    Record<never, never>,
+    ContributionFor<Config['document'], Config>
+  >
 }
 
 const PARAMETER_LOCATIONS = ['path', 'query', 'header', 'cookie'] as const
