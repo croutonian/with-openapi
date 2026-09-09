@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.0](https://github.com/croutonian/with-openapi/compare/with-openapi-v0.4.0...with-openapi-v0.5.0) (2026-09-09)
+
+
+### Features
+
+* eliminate impossible unmatched branch from contribution type based on config ([ca58d41](https://github.com/croutonian/with-openapi/commit/ca58d4125f6f1acdf4daefe30e2472a48279e0fe))
+
+
+### Bug Fixes
+
+* **document-types:** drop unmatched branch only when config rules it out ([298b639](https://github.com/croutonian/with-openapi/commit/298b6399244de8e980c991e4463dc3113c5fed69))
+
 ## [0.4.0](https://github.com/croutonian/with-openapi/compare/with-openapi-v0.3.0...with-openapi-v0.4.0) (2026-09-08)
 
 
