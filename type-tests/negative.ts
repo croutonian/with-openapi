@@ -77,3 +77,30 @@ withOpenApi({ document }, async (_req, ctx) => {
   const limit: number = ctx.openapi.params.query['limit']
   return Response.json({ limit })
 })
+
+// N8 — `onUnknownRoute: 'pass'` makes the unmatched branch reachable again,
+// and the type says so. Both branches carry the same keys, so the difference
+// shows in the value: `route` is the literal on a matched contribution and
+// `string | undefined` once an unmatched one is possible. Without this, the
+// elimination on default configs would be a convenience that could also be
+// wrong.
+const passing = withOpenApi({
+  document: defineDocument({
+    openapi: '3.1.0',
+    info: { title: 't', version: '1' },
+    paths: {
+      '/things': {
+        get: {
+          operationId: 'listThings',
+          responses: { '200': { description: 'ok' } },
+        },
+      },
+    },
+  }),
+  onUnknownRoute: 'pass',
+})
+pipeline([passing], async (_req, ctx) => {
+  // @expect-error TS2322 is not assignable to type '"/things"'
+  const route: '/things' = ctx.openapi.route
+  return Response.json({ route })
+})

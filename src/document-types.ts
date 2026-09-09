@@ -17,6 +17,7 @@ import type {
   OpenApiContribution,
   OpenApiMatched,
   OpenApiUnmatched,
+  WithOpenApiConfig,
 } from './types.js'
 
 /**
@@ -269,14 +270,68 @@ export type MatchedFor<Document> = {
 }[RoutesOf<Document>]
 
 /**
- * What lands at `ctx.openapi` for a given document.
+ * Whether `Key` is set to `'pass'` — or might be.
  *
- * Falls back to the unspecialized {@link OpenApiContribution} when the
- * document arrived without its literal type — annotated `: OpenAPIObject`,
- * say. `RoutesOf` is `never` there, which would otherwise leave a union with
- * no `matched: true` branch at all and break every existing consumer.
- * Degrading to today's shape is what keeps this change additive.
+ * Everything here fails *safe*: the unmatched branch is only dropped when the
+ * config provably cannot produce one. A widened config satisfies
+ * `'pass' extends string`, so it keeps the branch rather than promising a
+ * `matched: true` the runtime may not deliver.
  */
-export type ContributionFor<Document> = [RoutesOf<Document>] extends [never]
+type MayPass<Config, Key extends string> = Key extends keyof Config
+  ? 'pass' extends Config[Key]
+    ? true
+    : false
+  : false
+
+/**
+ * Whether a `skip` predicate might fire.
+ *
+ * Asks whether `skip` could *possibly* be a function, not whether it
+ * definitely is. `skip: condition ? fn : undefined` has type
+ * `Fn | undefined`, and a check of the second kind reads that as "no skip"
+ * and drops the branch — while at runtime the predicate fires whenever the
+ * condition holds, handing a handler an unmatched contribution the compiler
+ * said could not exist.
+ */
+type HasSkip<Config> = 'skip' extends keyof Config
+  ? [Config['skip']] extends [undefined]
+    ? false
+    : true
+  : false
+
+/**
+ * Whether this config can produce an unmatched contribution at all.
+ *
+ * Mirrors the three runtime branches that call `unmatched()`: a `skip` that
+ * fired, `onUnknownRoute: 'pass'` with no route match, `onUnknownMethod:
+ * 'pass'` with no operation. On the defaults none of them can, because both
+ * options default to `'reject'` and answer the request themselves.
+ */
+export type CanBeUnmatched<Config> =
+  MayPass<Config, 'onUnknownRoute'> extends true
+    ? true
+    : MayPass<Config, 'onUnknownMethod'> extends true
+      ? true
+      : HasSkip<Config> extends true
+        ? true
+        : false
+
+/**
+ * What lands at `ctx.openapi` for a given document and config.
+ *
+ * Two reductions, in order. Handed a document that arrived without its
+ * literal type — annotated `: OpenAPIObject`, say — `RoutesOf` is `never`,
+ * and this degrades to the unspecialized {@link OpenApiContribution}; without
+ * that, the union would have no `matched: true` branch at all and every
+ * existing consumer would break. Otherwise the unmatched branch is dropped
+ * unless the config can actually produce one, so a downstream middleware or
+ * handler can read `route`, `operationId` and `params` without a guard for a
+ * case that cannot happen.
+ */
+export type ContributionFor<Document, Config = WithOpenApiConfig> = [
+  RoutesOf<Document>,
+] extends [never]
   ? OpenApiContribution
-  : MatchedFor<Document> | OpenApiUnmatched
+  : CanBeUnmatched<Config> extends true
+    ? MatchedFor<Document> | OpenApiUnmatched
+    : MatchedFor<Document>

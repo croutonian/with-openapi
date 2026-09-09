@@ -7,7 +7,13 @@ import { withCors } from '@supabase/middleware/cors'
 import type { OpenAPIObject } from 'openapi3-ts/oas31'
 
 import { defineDocument, withOpenApi } from '../src/index.js'
-import type { OperationIdsOf, ParamsFor, RoutesOf } from '../src/index.js'
+import type {
+  ContributionFor,
+  OpenApiUnmatched,
+  OperationIdsOf,
+  ParamsFor,
+  RoutesOf,
+} from '../src/index.js'
 
 /**
  * Exact type equality. Needed because an assignability check passes for a
@@ -276,3 +282,75 @@ const _p22 = withOpenApi({ document }, async (_req, ctx) => {
   return Response.json({ limit })
 }) satisfies FetchHandler
 void _p22
+
+// P23..P27 — on the default config the unmatched branch is unreachable, so it
+// is not in the type: downstream layers narrow to `matched: true` already.
+const typedDoc = defineDocument({
+  openapi: '3.1.0',
+  info: { title: 't', version: '1' },
+  paths: {
+    '/things': {
+      get: {
+        operationId: 'listThings',
+        parameters: [
+          { name: 'limit', in: 'query', schema: { type: 'integer' } },
+        ],
+        responses: { '200': { description: 'ok' } },
+      },
+    },
+  },
+})
+
+// P23 — no guard, straight to the operation's own parameters.
+const _p23 = pipeline(
+  [withOpenApi({ document: typedDoc })],
+  async (_req, ctx) => {
+    const route: '/things' = ctx.openapi.route
+    if (ctx.openapi.operationId === 'listThings') {
+      const limit: number | undefined = ctx.openapi.params.query.limit
+      return Response.json({ route, limit })
+    }
+    return Response.json({ route })
+  },
+) satisfies FetchHandler
+void _p23
+
+// P24 — and a middleware composed after it sees the same narrowed shape.
+const _p24 = pipeline(
+  [withOpenApi({ document: typedDoc }), withCors({})],
+  async (_req, ctx) => Response.json({ id: ctx.openapi.operationId }),
+) satisfies FetchHandler
+void _p24
+
+// P25 — `onUnknownRoute: 'pass'` puts the branch back, because now it can
+// actually happen.
+type Passing = ContributionFor<typeof typedDoc, { onUnknownRoute: 'pass' }>
+type _p25 = Expect<
+  Equals<
+    Extract<Passing, { matched: false }>['reason'],
+    OpenApiUnmatched['reason']
+  >
+>
+
+// P26 — defaults drop it entirely.
+type Default = ContributionFor<typeof typedDoc, { document: typeof typedDoc }>
+type _p26 = Expect<Equals<Extract<Default, { matched: false }>, never>>
+
+// P27 — a `skip` that only *might* be a function keeps the branch. Reading it
+// as "definitely a function or nothing" would drop it here and hand a handler
+// an unmatched contribution the compiler ruled out.
+type Conditional = {
+  document: typeof typedDoc
+  skip: ((r: Request) => boolean) | undefined
+}
+type _p27 = Expect<
+  Equals<
+    Extract<
+      ContributionFor<typeof typedDoc, Conditional>,
+      { matched: false }
+    >['matched'],
+    false
+  >
+>
+
+void (null as unknown as [_p25, _p26, _p27])
