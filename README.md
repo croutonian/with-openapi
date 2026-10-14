@@ -6,7 +6,7 @@
 [![CI](https://github.com/croutonian/with-openapi/actions/workflows/ci.yml/badge.svg)](https://github.com/croutonian/with-openapi/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
-OpenAPI middleware for
+OpenAPI middleware built on
 [`@supabase/middleware`](https://github.com/supabase/middleware).
 
 An OpenAPI document already says what your API accepts. This makes it say it at
