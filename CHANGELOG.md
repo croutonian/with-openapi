@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.0](https://github.com/croutonian/with-openapi/compare/with-openapi-v0.5.0...with-openapi-v0.6.0) (2026-10-17)
+
+
+### Features
+
+* **deps:** bump @supabase/middleware to ^1.0.0 ([70a2dd5](https://github.com/croutonian/with-openapi/commit/70a2dd57da2dc92ff7b923feb0b6bca405292898))
+* **deps:** bump @supabase/middleware to ^1.0.0 ([7685038](https://github.com/croutonian/with-openapi/commit/768503896a1f875771fe0efce87c873a99e2b312))
+
 ## [0.5.0](https://github.com/croutonian/with-openapi/compare/with-openapi-v0.4.0...with-openapi-v0.5.0) (2026-09-09)
 
 
